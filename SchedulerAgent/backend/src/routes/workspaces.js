@@ -6,8 +6,10 @@ const prisma = require('../prisma');
 const { requireAuth, requireOrgRole, requireWorkspaceAccess } = require('../middleware/auth');
 const { analyzeMedia } = require('../services/openrouter');
 
-const router = express.Router();
-const UPLOADS_DIR = path.resolve(__dirname, '../../../uploads');
+const os = require('os');
+const UPLOADS_DIR = process.env.VERCEL || process.env.NODE_ENV === 'production'
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.resolve(__dirname, '../../../uploads');
 
 // Multer disk storage engine to save files directly under uploads/:workspaceId/
 const storage = multer.diskStorage({

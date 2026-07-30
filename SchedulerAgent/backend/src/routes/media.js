@@ -119,12 +119,19 @@ router.get('/:id/preview', requireAuth, async (req, res) => {
  */
 function getAbsoluteFilePath(mediaFilepath) {
   const path = require('path');
-  return path.resolve(__dirname, '../../../', mediaFilepath);
+  const os = require('os');
+  if (path.isAbsolute(mediaFilepath)) {
+    return mediaFilepath;
+  }
+  const baseUploads = process.env.VERCEL || process.env.NODE_ENV === 'production'
+    ? path.join(os.tmpdir(), 'uploads')
+    : path.resolve(__dirname, '../../../uploads');
+  return path.join(baseUploads, mediaFilepath.replace(/^uploads[\/\\]?/, ''));
 }
 
 /**
  * GET /api/media/:id/file
- * Streams the raw uploaded media file.
+ * Streams the raw uploaded media file or redirects to Cloudflare R2.
  */
 router.get('/:id/file', requireAuth, async (req, res) => {
   const fs = require('fs');
@@ -152,6 +159,11 @@ router.get('/:id/file', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
+    // If R2 URL is available, redirect directly to Cloudflare R2!
+    if (media.r2Url) {
+      return res.redirect(media.r2Url);
+    }
+
     const absolutePath = getAbsoluteFilePath(media.filepath);
     if (!fs.existsSync(absolutePath)) {
       return res.status(404).json({ error: 'Physical media file missing' });
@@ -163,6 +175,7 @@ router.get('/:id/file', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
 
 /**
  * GET /api/media/:id/thumbnail

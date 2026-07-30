@@ -222,8 +222,21 @@ Return ONLY the raw JSON object. Do not wrap in markdown or backticks. All field
           data: { statusDetail: `Analyzing image with Gemini Vision AI (${geminiModel})...` },
         });
 
-        const imageBuffer = imageToAnalyze ? fs.readFileSync(imageToAnalyze) : null;
-        const mimeType = imageToAnalyze ? getMimeType(imageToAnalyze) : 'image/jpeg';
+        let imageBuffer = null;
+        let mimeType = 'image/jpeg';
+
+        if (imageToAnalyze && fs.existsSync(imageToAnalyze)) {
+          imageBuffer = fs.readFileSync(imageToAnalyze);
+          mimeType = getMimeType(imageToAnalyze);
+        } else if (media.r2Url && media.mediaType === 'IMAGE') {
+          try {
+            const r2Res = await axios.get(media.r2Url, { responseType: 'arraybuffer', timeout: 10000 });
+            imageBuffer = Buffer.from(r2Res.data);
+            mimeType = r2Res.headers['content-type'] || getMimeType(media.filename);
+          } catch (r2FetchErr) {
+            console.warn('[AI ENGINE] Could not fetch R2 image buffer for Gemini analysis:', r2FetchErr.message);
+          }
+        }
 
         const parts = [{ text: systemPrompt }];
         if (imageBuffer) {
