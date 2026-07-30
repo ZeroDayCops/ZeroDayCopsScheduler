@@ -144,7 +144,9 @@ router.get('/:platform/connect', requireAuth, async (req, res) => {
     }
 
     if (upperPlatform === 'YOUTUBE') {
-      const redirectUri = `${redirectUriBase}/youtube/callback`;
+      const redirectUri = (process.env.YOUTUBE_REDIRECT_URI && !process.env.YOUTUBE_REDIRECT_URI.includes('localhost'))
+        ? process.env.YOUTUBE_REDIRECT_URI
+        : `${redirectUriBase}/youtube/callback`;
       const oauth2Client = new google.auth.OAuth2(
         process.env.YOUTUBE_CLIENT_ID,
         process.env.YOUTUBE_CLIENT_SECRET,
@@ -395,7 +397,9 @@ router.get('/:platform/callback', requireAuth, async (req, res) => {
     }
 
     if (upperPlatform === 'YOUTUBE') {
-      const redirectUri = `${redirectUriBase}/youtube/callback`;
+      const redirectUri = (process.env.YOUTUBE_REDIRECT_URI && !process.env.YOUTUBE_REDIRECT_URI.includes('localhost'))
+        ? process.env.YOUTUBE_REDIRECT_URI
+        : `${redirectUriBase}/youtube/callback`;
       const oauth2Client = new google.auth.OAuth2(
         process.env.YOUTUBE_CLIENT_ID,
         process.env.YOUTUBE_CLIENT_SECRET,
