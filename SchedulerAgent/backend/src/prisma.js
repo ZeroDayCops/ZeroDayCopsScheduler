@@ -12,7 +12,9 @@ try {
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 1,
+  ssl: process.env.DATABASE_URL?.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
 });
+
 
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
