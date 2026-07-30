@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "description": "Root package runner for ZeroDayCops Social Media Scheduler",
   "scripts": {
-    "dev": "npm run dev --prefix SchedulerAgent/backend & npm run dev --prefix SchedulerAgent/frontend"
+    "dev": "npm run dev --prefix SchedulerAgent/backend & npm run dev --prefix SchedulerAgent/frontend",
+    "postinstall": "npm install --prefix SchedulerAgent/backend && npm run postinstall --prefix SchedulerAgent/backend && npm install --prefix SchedulerAgent/frontend"
   }
 }
+
