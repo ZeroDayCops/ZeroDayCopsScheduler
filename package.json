@@ -1,0 +1,8 @@
+{
+  "name": "zerodaycopsscheduler-root",
+  "version": "1.0.0",
+  "description": "Root package runner for ZeroDayCops Social Media Scheduler",
+  "scripts": {
+    "dev": "npm run dev --prefix SchedulerAgent/backend & npm run dev --prefix SchedulerAgent/frontend"
+  }
+}

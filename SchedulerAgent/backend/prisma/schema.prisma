@@ -1,0 +1,247 @@
+// SchedulerAgent — Multi-Tenant Schema
+// Phase 1: Auth & Tenancy Layer
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ──────────────────────────────────────────────────────
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum Platform {
+  LINKEDIN
+  PINTEREST
+  YOUTUBE
+}
+
+enum SocialAccountStatus {
+  NOT_CONNECTED
+  CONNECTED
+  EXPIRED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum MediaStatus {
+  NEW
+  ANALYZING
+  ANALYZED
+  FAILED
+}
+
+enum AutomationMode {
+  MANUAL
+  AUTO_SCHEDULE
+  AUTO_PUBLISH
+}
+
+// ─── Organization (the agency) ──────────────────────────────────
+
+model Organization {
+  id          String       @id @default(uuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  memberships Membership[]
+  workspaces  Workspace[]
+}
+
+enum ScheduleSource {
+  FILENAME_PARSER
+  DEFAULT_RULE
+  MANUAL
+}
+
+// ─── User ───────────────────────────────────────────────────────
+
+model User {
+  id              String            @id @default(uuid())
+  email           String            @unique
+  passwordHash    String
+  name            String
+  notificationPrefs Json?           // { muteSuccess, muteScheduled, alertFailure }
+  createdAt       DateTime          @default(now())
+  memberships     Membership[]
+  workspaceAccess WorkspaceAccess[]
+}
+
+// ─── Membership (User ↔ Organization with role) ─────────────────
+
+model Membership {
+  id             String       @id @default(uuid())
+  userId         String
+  organizationId String
+  role           OrgRole      @default(MEMBER)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+}
+
+// ─── Workspace (a client brand) ─────────────────────────────────
+
+model Workspace {
+  id                      String            @id @default(uuid())
+  organizationId          String
+  brandName               String
+  website                 String?
+  cta                     String?
+  defaultHashtags         String[]
+  brandVoice              String?
+  emojiStyle              String?
+  automationMode          AutomationMode    @default(MANUAL)
+  defaultSlotTime         String            @default("20:00")
+  timezone                String            @default("Asia/Kolkata")
+  allowVideoImageFallback Boolean           @default(false)
+  createdAt               DateTime          @default(now())
+  organization            Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspaceAccess         WorkspaceAccess[]
+  socialAccounts          SocialAccount[]
+  media                   Media[]
+  templates               Template[]
+  scheduledPosts          ScheduledPost[]
+  notifications           Notification[]
+}
+
+// ─── WorkspaceAccess (grants a user access to a workspace) ──────
+
+model WorkspaceAccess {
+  id          String    @id @default(uuid())
+  userId      String
+  workspaceId String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+}
+
+// ─── SocialAccount (platform connections per workspace) ─────────
+// Structure only for Phase 1; OAuth logic comes in Phase 6
+
+model SocialAccount {
+  id                    String              @id @default(uuid())
+  workspaceId           String
+  platform              Platform
+  accountName           String?
+  status                SocialAccountStatus @default(NOT_CONNECTED)
+  accessTokenEncrypted  String?
+  refreshTokenEncrypted String?
+  expiresAt             DateTime?
+  externalAccountId     String?
+  pagesJson             Json?               // Array of {id, name} for LinkedIn company pages
+  selectedAuthorUrn     String?             // e.g. "urn:li:organization:12345" or null for personal
+  workspace             Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  scheduledPosts        ScheduledPost[]
+
+  @@unique([workspaceId, platform])
+}
+
+// ─── Media (ingested images and videos) ──────────────────────────
+
+model Media {
+  id           String      @id @default(uuid())
+  workspaceId  String
+  filename     String
+  filepath     String
+  r2Url        String?
+  r2Key        String?
+  mediaType    MediaType
+  status       MediaStatus @default(NEW)
+  statusDetail String?
+  aiMasterJson Json?
+  createdAt    DateTime    @default(now())
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  scheduledPosts ScheduledPost[]
+
+  @@index([workspaceId, status])
+}
+
+// ─── Template (post styling templates) ───────────────────────────
+
+model Template {
+  id           String     @id @default(uuid())
+  workspaceId  String?
+  platform     Platform
+  name         String
+  templateBody String
+  isDefault    Boolean    @default(false)
+  workspace    Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+// ─── ScheduledPost (queued/scheduled posts) ──────────────────────
+
+enum PostStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+}
+
+model ScheduledPost {
+  id              String         @id @default(uuid())
+  workspaceId     String
+  mediaId         String
+  socialAccountId String
+  platform        Platform
+  renderedContent Json
+  scheduledFor    DateTime
+  scheduleSource  ScheduleSource @default(MANUAL)
+  status          PostStatus     @default(PENDING)
+  publishedAt     DateTime?
+  externalPostId  String?
+  retryCount      Int            @default(0)
+  workspace       Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  media           Media          @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  socialAccount   SocialAccount  @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  postLogs        PostLog[]
+
+  @@index([workspaceId, scheduledFor])
+  @@index([status])
+}
+
+// ─── PostLog (history of publishing attempts) ────────────────────
+
+enum LogEvent {
+  ATTEMPT
+  SUCCESS
+  FAILURE
+  RETRY
+}
+
+model PostLog {
+  id              String        @id @default(uuid())
+  scheduledPostId String
+  event           LogEvent
+  message         String
+  createdAt       DateTime      @default(now())
+  scheduledPost   ScheduledPost @relation(fields: [scheduledPostId], references: [id], onDelete: Cascade)
+}
+
+// ─── Notification (dashboard and in-app activity notifications) ──
+
+model Notification {
+  id          String    @id @default(uuid())
+  workspaceId String
+  mediaId     String?
+  type        String    // INGESTION | SCHEDULED_SUMMARY | PUBLISH_SUMMARY | FAILED | RETRYING | DIGEST
+  title       String
+  message     String
+  actionUrl   String?   // e.g. "settings#connections" or "media"
+  read        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+}
+

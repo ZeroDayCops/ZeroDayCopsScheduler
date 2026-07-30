@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme {
+  /* Semantic Status Colors */
+  --color-status-connected-bg: rgba(16, 185, 129, 0.1);
+  --color-status-connected-fg: #34d399;
+  --color-status-connected-border: rgba(16, 185, 129, 0.2);
+
+  --color-status-expired-bg: rgba(245, 158, 11, 0.1);
+  --color-status-expired-fg: #fbbf24;
+  --color-status-expired-border: rgba(245, 158, 11, 0.2);
+
+  --color-status-disconnected-bg: rgba(100, 116, 139, 0.1);
+  --color-status-disconnected-fg: #94a3b8;
+  --color-status-disconnected-border: rgba(100, 116, 139, 0.2);
+
+  --color-status-pending-bg: rgba(99, 102, 241, 0.1);
+  --color-status-pending-fg: #818cf8;
+  --color-status-pending-border: rgba(99, 102, 241, 0.2);
+
+  --color-status-processing-bg: rgba(168, 85, 247, 0.1);
+  --color-status-processing-fg: #c084fc;
+  --color-status-processing-border: rgba(168, 85, 247, 0.2);
+
+  --color-status-published-bg: rgba(16, 185, 129, 0.1);
+  --color-status-published-fg: #34d399;
+  --color-status-published-border: rgba(16, 185, 129, 0.2);
+
+  --color-status-failed-bg: rgba(244, 63, 94, 0.1);
+  --color-status-failed-fg: #fb7185;
+  --color-status-failed-border: rgba(244, 63, 94, 0.2);
+
+  /* Platform Brand Colors */
+  --color-platform-linkedin: #0a66c2;
+  --color-platform-pinterest: #e60023;
+  --color-platform-youtube: #ff0000;
+
+  /* Surfaces */
+  --color-[#090d16]: #090d16;
+  --color-[#0b101c]: #0b101c;
+  --color-[#0d1220]: #0d1220;
+  --color-[#070b14]: #070b14;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Custom Scrollbar for sleek dark mode */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
