@@ -90,8 +90,8 @@ router.get('/:platform/connect', requireAuth, async (req, res) => {
 
     const redirectUriBase = getRedirectUriBase(req);
 
-    // Check if we should use mock OAuth flow
-    const useMock = process.env.ALLOW_MOCK_OAUTH === 'true' || req.query.mock === 'true';
+    // Check if we should use mock OAuth flow (only in dev or when explicitly requested via ?mock=true)
+    const useMock = req.query.mock === 'true' || (process.env.ALLOW_MOCK_OAUTH === 'true' && process.env.NODE_ENV === 'development');
     if (useMock) {
       const redirectUri = `${redirectUriBase}/${platform.toLowerCase()}/callback`;
       return res.redirect(`${redirectUri}?code=mock_authorization_code&state=${workspaceId}`);
