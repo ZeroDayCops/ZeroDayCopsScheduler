@@ -2,11 +2,12 @@
 // Phase 1: Auth & Tenancy Layer
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
 }
 
 // ─── Enums ──────────────────────────────────────────────────────

@@ -63,16 +63,40 @@ const { seedDefaultTemplates } = require('./services/template-seeder');
 const { seedPermanentUser } = require('./services/user-seeder');
 const { startScheduler } = require('./services/scheduler');
 
+// Log background worker state on entrypoint load (Vercel cold start or server init)
+const enableWorkers = process.env.RUN_BACKGROUND_WORKERS === 'true';
+console.log(`[WORKER SYSTEM] Environment check: RUN_BACKGROUND_WORKERS=${process.env.RUN_BACKGROUND_WORKERS || 'unset'}. Background workers (Chokidar watcher & Node-Cron scheduler) are ${enableWorkers ? 'ENABLED' : 'DISABLED'}.`);
+
+function runWorkersIfEnabled() {
+  if (process.env.RUN_BACKGROUND_WORKERS === 'true') {
+    console.log('[WORKER SYSTEM] RUN_BACKGROUND_WORKERS=true -> Initializing background workers (Chokidar + Node-Cron)...');
+    try {
+      initWatcher();
+    } catch (watcherErr) {
+      console.error('[WATCHER ERROR] Failed to start chokidar watcher:', watcherErr.message);
+    }
+    try {
+      startScheduler();
+    } catch (schedErr) {
+      console.error('[SCHEDULER ERROR] Failed to start cron scheduler:', schedErr.message);
+    }
+  }
+}
+
 app.listen(PORT, async () => {
-  console.log(`SchedulerAgent backend running on http://localhost:${PORT}`);
-  console.log('LinkedIn secret loaded:', !!process.env.LINKEDIN_CLIENT_SECRET, 'length:', process.env.LINKEDIN_CLIENT_SECRET?.length);
+  console.log(`SchedulerAgent backend running on port ${PORT}`);
+  
   // Seed default templates & permanent user
-  await seedDefaultTemplates();
-  await seedPermanentUser();
-  // Start directory watcher
-  initWatcher();
-  // Start post scheduler cron
-  startScheduler();
+  try {
+    await seedDefaultTemplates();
+    await seedPermanentUser();
+  } catch (seedErr) {
+    console.error('[SEEDER ERROR] Failed to seed default data:', seedErr.message);
+  }
+
+  // Background workers gate (Disabled on Vercel serverless, enabled on persistent worker servers)
+  runWorkersIfEnabled();
 });
+
 
 module.exports = app;
