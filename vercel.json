@@ -1,12 +1,14 @@
 {
   "builds": [
     {
-      "src": "SchedulerAgent/backend/src/index.js",
+      "src": "api/index.js",
       "use": "@vercel/node",
       "config": {
         "includeFiles": [
           "SchedulerAgent/backend/node_modules/.prisma/client/**",
-          "SchedulerAgent/backend/node_modules/@prisma/client/**"
+          "SchedulerAgent/backend/node_modules/@prisma/client/**",
+          "node_modules/.prisma/client/**",
+          "node_modules/@prisma/client/**"
         ]
       }
     },
@@ -19,7 +21,7 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "SchedulerAgent/backend/src/index.js"
+      "dest": "api/index.js"
     },
     {
       "src": "/(.*)",
@@ -27,5 +29,6 @@
     }
   ]
 }
+
 
 
