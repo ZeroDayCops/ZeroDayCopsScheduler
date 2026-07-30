@@ -9,15 +9,21 @@ try {
   console.error('[PRISMA DEBUG] Cold Start - Failed resolving @prisma/client:', e.message);
 }
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 1,
-  ssl: process.env.DATABASE_URL?.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
-});
+let prisma;
 
-
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+try {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 1,
+    ssl: process.env.DATABASE_URL?.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
+  });
+  const adapter = new PrismaPg(pool);
+  prisma = new PrismaClient({ adapter });
+} catch (err) {
+  console.warn('[PRISMA WARNING] Could not initialize PrismaPg adapter, using standard PrismaClient:', err.message);
+  prisma = new PrismaClient();
+}
 
 module.exports = prisma;
+
 
