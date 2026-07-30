@@ -6,9 +6,15 @@ const { requireAuth } = require('../middleware/auth');
 const { encrypt } = require('../utils/crypto');
 
 const router = express.Router();
-const REDIRECT_URI_BASE = process.env.REDIRECT_URI_BASE || 
-  (process.env.APP_URL ? `${process.env.APP_URL}/api/oauth` : 
-  (process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/api/oauth` : 'https://scheduler.zerodaycops.in/api/oauth'));
+
+function getRedirectUriBase(req) {
+  if (process.env.REDIRECT_URI_BASE && !process.env.REDIRECT_URI_BASE.includes('localhost')) {
+    return process.env.REDIRECT_URI_BASE.replace(/\/$/, '');
+  }
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.headers['x-forwarded-host'] || req.get('host') || 'scheduler.zerodaycops.in';
+  return `${protocol}://${host}/api/oauth`;
+}
 
 // Helper to determine if credentials are configured
 function isConfigured(platform) {
@@ -82,10 +88,12 @@ router.get('/:platform/connect', requireAuth, async (req, res) => {
       }
     }
 
+    const redirectUriBase = getRedirectUriBase(req);
+
     // Check if we should use mock OAuth flow
     const useMock = process.env.ALLOW_MOCK_OAUTH === 'true' || req.query.mock === 'true';
     if (useMock) {
-      const redirectUri = `${REDIRECT_URI_BASE}/${platform}/callback`;
+      const redirectUri = `${redirectUriBase}/${platform.toLowerCase()}/callback`;
       return res.redirect(`${redirectUri}?code=mock_authorization_code&state=${workspaceId}`);
     }
 
@@ -114,7 +122,9 @@ router.get('/:platform/connect', requireAuth, async (req, res) => {
     const state = workspaceId;
 
     if (upperPlatform === 'LINKEDIN') {
-      const redirectUri = process.env.LINKEDIN_REDIRECT_URI || `${REDIRECT_URI_BASE}/linkedin/callback`;
+      const redirectUri = (process.env.LINKEDIN_REDIRECT_URI && !process.env.LINKEDIN_REDIRECT_URI.includes('localhost')) 
+        ? process.env.LINKEDIN_REDIRECT_URI 
+        : `${redirectUriBase}/linkedin/callback`;
       // Base scopes for personal posting
       let scopes = 'w_member_social openid profile';
       // Add org scopes only if enabled (requires Community Management API approval from LinkedIn)
@@ -128,13 +138,13 @@ router.get('/:platform/connect', requireAuth, async (req, res) => {
     }
 
     if (upperPlatform === 'PINTEREST') {
-      const redirectUri = `${REDIRECT_URI_BASE}/pinterest/callback`;
+      const redirectUri = `${redirectUriBase}/pinterest/callback`;
       const pinterestUrl = `https://www.pinterest.com/oauth/?consumer_id=${process.env.PINTEREST_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=boards:read,boards:write,pins:read,pins:write,user_accounts:read&state=${state}`;
       return res.redirect(pinterestUrl);
     }
 
     if (upperPlatform === 'YOUTUBE') {
-      const redirectUri = `${REDIRECT_URI_BASE}/youtube/callback`;
+      const redirectUri = `${redirectUriBase}/youtube/callback`;
       const oauth2Client = new google.auth.OAuth2(
         process.env.YOUTUBE_CLIENT_ID,
         process.env.YOUTUBE_CLIENT_SECRET,
@@ -153,6 +163,7 @@ router.get('/:platform/connect', requireAuth, async (req, res) => {
       
       return res.redirect(googleUrl);
     }
+
   } catch (err) {
     console.error('OAuth connect route error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -275,9 +286,13 @@ router.get('/:platform/callback', requireAuth, async (req, res) => {
       }
     }
 
+    const redirectUriBase = getRedirectUriBase(req);
+
     if (!isMock) {
       if (upperPlatform === 'LINKEDIN') {
-        const redirectUri = process.env.LINKEDIN_REDIRECT_URI || `${REDIRECT_URI_BASE}/linkedin/callback`;
+        const redirectUri = (process.env.LINKEDIN_REDIRECT_URI && !process.env.LINKEDIN_REDIRECT_URI.includes('localhost')) 
+          ? process.env.LINKEDIN_REDIRECT_URI 
+          : `${redirectUriBase}/linkedin/callback`;
       const bodyParams = new URLSearchParams({
         grant_type: 'authorization_code',
         code,
@@ -345,7 +360,7 @@ router.get('/:platform/callback', requireAuth, async (req, res) => {
     }
 
     if (upperPlatform === 'PINTEREST') {
-      const redirectUri = `${REDIRECT_URI_BASE}/pinterest/callback`;
+      const redirectUri = `${redirectUriBase}/pinterest/callback`;
       const authHeader = Buffer.from(`${process.env.PINTEREST_CLIENT_ID}:${process.env.PINTEREST_CLIENT_SECRET}`).toString('base64');
       const bodyParams = new URLSearchParams({
         grant_type: 'authorization_code',
@@ -380,7 +395,7 @@ router.get('/:platform/callback', requireAuth, async (req, res) => {
     }
 
     if (upperPlatform === 'YOUTUBE') {
-      const redirectUri = `${REDIRECT_URI_BASE}/youtube/callback`;
+      const redirectUri = `${redirectUriBase}/youtube/callback`;
       const oauth2Client = new google.auth.OAuth2(
         process.env.YOUTUBE_CLIENT_ID,
         process.env.YOUTUBE_CLIENT_SECRET,
