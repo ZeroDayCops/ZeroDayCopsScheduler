@@ -11,9 +11,22 @@ const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.avi', '.mkv'];
 
 async function initWatcher() {
-  const { default: chokidar } = await import('chokidar');
+  let chokidar;
+  try {
+    const mod = await import('chokidar');
+    chokidar = mod.default || mod;
+  } catch (e) {
+    console.warn('[WATCHER] Chokidar ESM import failed or not supported in this runtime environment:', e.message);
+    return null;
+  }
+
   if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    try {
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    } catch (mkdirErr) {
+      console.warn('[WATCHER] Could not create UPLOADS_DIR (read-only filesystem on Vercel):', mkdirErr.message);
+      return null;
+    }
   }
   console.log(`Initializing chokidar watcher on: ${UPLOADS_DIR}`);
 
