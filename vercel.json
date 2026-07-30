@@ -1,0 +1,23 @@
+{
+  "builds": [
+    {
+      "src": "SchedulerAgent/backend/src/index.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "SchedulerAgent/frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "dist" }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "SchedulerAgent/backend/src/index.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "SchedulerAgent/frontend/$1"
+    }
+  ]
+}
