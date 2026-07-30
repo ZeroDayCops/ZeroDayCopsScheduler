@@ -76,9 +76,41 @@ async function deleteFromR2(key) {
   console.log(`[R2 STORAGE] Deleted ${key} from R2 bucket ${bucketName}`);
 }
 
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
+/**
+ * Generates a presigned PUT URL for direct client-to-R2 upload (bypassing Vercel 4.5MB limit).
+ */
+async function generatePresignedUploadUrl(destinationKey, mimeType) {
+  if (!s3Client) {
+    throw new Error('R2 S3 Client is not configured');
+  }
+
+  const command = new PutObjectCommand({
+    Bucket: bucketName,
+    Key: destinationKey,
+    ContentType: mimeType,
+  });
+
+  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  const publicDomain = process.env.R2_PUBLIC_DOMAIN;
+  const publicUrl = publicDomain 
+    ? `${publicDomain.replace(/\/$/, '')}/${destinationKey}`
+    : `${endpoint}/${bucketName}/${destinationKey}`;
+
+  return {
+    uploadUrl,
+    key: destinationKey,
+    bucket: bucketName,
+    publicUrl,
+  };
+}
+
 module.exports = {
   s3Client,
   uploadToR2,
   deleteFromR2,
+  generatePresignedUploadUrl,
   bucketName,
 };
+

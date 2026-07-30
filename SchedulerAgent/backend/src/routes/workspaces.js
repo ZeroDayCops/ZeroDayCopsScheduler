@@ -28,7 +28,10 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 500 * 1024 * 1024 }
+});
 
 
 /**
@@ -388,7 +391,88 @@ router.delete('/:id/access/:userId', requireAuth, requireWorkspaceAccess, async 
   }
 });
 
-const { uploadToR2 } = require('../services/r2Storage');
+const { uploadToR2, generatePresignedUploadUrl, s3Client } = require('../services/r2Storage');
+
+/**
+ * POST /api/workspaces/:id/media/upload-url
+ * Generates a presigned upload URL to upload large files directly to Cloudflare R2 (bypassing Vercel 4.5MB limit).
+ */
+router.post('/:id/media/upload-url', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const { filename, mimeType } = req.body;
+    const workspaceId = req.params.id;
+
+    if (!filename || !mimeType) {
+      return res.status(400).json({ error: 'filename and mimeType are required' });
+    }
+
+    const ext = path.extname(filename).toLowerCase();
+    const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.avi', '.mkv'];
+
+    let mediaType;
+    if (IMAGE_EXTS.includes(ext)) {
+      mediaType = 'IMAGE';
+    } else if (VIDEO_EXTS.includes(ext)) {
+      mediaType = 'VIDEO';
+    } else {
+      return res.status(400).json({ error: 'Unsupported file type' });
+    }
+
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const destinationKey = `${workspaceId}/file-${uniqueSuffix}${ext}`;
+
+    if (!s3Client) {
+      return res.status(400).json({ error: 'R2 storage is not configured for direct upload' });
+    }
+
+    const presigned = await generatePresignedUploadUrl(destinationKey, mimeType);
+
+    const media = await prisma.media.create({
+      data: {
+        workspaceId,
+        filename,
+        filepath: destinationKey,
+        r2Url: presigned.publicUrl,
+        r2Key: presigned.key,
+        mediaType,
+        status: 'NEW',
+      },
+    });
+
+    res.json({
+      uploadUrl: presigned.uploadUrl,
+      mediaId: media.id,
+      media,
+    });
+  } catch (err) {
+    console.error('Presigned upload URL generation error:', err);
+    res.status(500).json({ error: 'Failed to generate upload URL' });
+  }
+});
+
+/**
+ * POST /api/workspaces/:id/media/:mediaId/complete-r2
+ * Signals that direct R2 upload has completed and triggers AI analysis.
+ */
+router.post('/:id/media/:mediaId/complete-r2', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const { mediaId } = req.params;
+    const media = await prisma.media.findUnique({ where: { id: mediaId } });
+    if (!media) {
+      return res.status(404).json({ error: 'Media asset not found' });
+    }
+
+    analyzeMedia(media.id).catch((err) => {
+      console.error(`Error in async OpenRouter analysis for media ${media.id}:`, err);
+    });
+
+    res.json({ success: true, media });
+  } catch (err) {
+    console.error('Complete R2 upload error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 /**
  * POST /api/workspaces/:id/media
