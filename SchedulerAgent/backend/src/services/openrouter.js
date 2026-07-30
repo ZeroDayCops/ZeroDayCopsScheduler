@@ -154,9 +154,41 @@ async function analyzeMedia(mediaId) {
 
     const imageToAnalyze = tempFramePath || (media.mediaType === 'IMAGE' ? activeFilepath : null);
     const brandVoice = media.workspace.brandVoice || 'bold, creative, and professional';
+    const brandDescription = media.workspace.brandDescription || '';
     const emojiStyle = media.workspace.emojiStyle || 'moderate';
 
-    const systemPrompt = `You are an expert social media brand manager. Analyze the provided media and return a SINGLE, valid JSON object following this exact schema:
+    // ─── Step 3: Fetch historical caption style-matching examples ─────
+    let historicalExamplesText = '';
+    try {
+      const pastPosts = await prisma.scheduledPost.findMany({
+        where: {
+          workspaceId: media.workspaceId,
+          status: 'PUBLISHED',
+        },
+        orderBy: { publishedAt: 'desc' },
+        take: 3,
+      });
+
+      if (pastPosts.length > 0) {
+        const exampleSnippets = pastPosts
+          .map((post, idx) => {
+            const content = post.renderedContent || {};
+            const text = content.description || content.caption || (typeof content === 'string' ? content : '');
+            if (!text) return null;
+            const truncated = text.length > 200 ? text.slice(0, 200) + '...' : text;
+            return `Example ${idx + 1}: "${truncated}"`;
+          })
+          .filter(Boolean);
+
+        if (exampleSnippets.length > 0) {
+          historicalExamplesText = `\nHistorical Style Reference Examples (match tone and formatting, do not duplicate content):\n${exampleSnippets.join('\n')}\n`;
+        }
+      }
+    } catch (histErr) {
+      console.warn('[AI ENGINE] Failed to fetch historical style examples:', histErr.message);
+    }
+
+    let systemPrompt = `You are an expert social media brand manager. Analyze the provided media and return a SINGLE, valid JSON object following this exact schema:
 
 {
   "product": "Short, catchy product/feature/theme title",
@@ -170,16 +202,24 @@ async function analyzeMedia(mediaId) {
 
 Return ONLY the raw JSON object. Do not wrap in markdown or backticks. All fields are required.`;
 
+    if (brandDescription) {
+      systemPrompt += `\n\nWorkspace Brand Context:\n${brandDescription}`;
+    }
+    if (historicalExamplesText) {
+      systemPrompt += `\n${historicalExamplesText}`;
+    }
+
     let resultJson = null;
 
-    // ─── PROVIDER 1: Google Gemini 2.5 Flash Vision (API Key) ────────
+    // ─── PROVIDER 1: Google Gemini Vision API (API Key + Model Env) ─
     const geminiKey = process.env.GEMINI_API_KEY;
+    const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
     if (!resultJson && geminiKey && geminiKey.trim() && !geminiKey.includes('your-')) {
       try {
-        console.log(`[AI ENGINE] Analyzing media ${mediaId} with Google Gemini 2.5 Flash Vision...`);
+        console.log(`[AI ENGINE] Analyzing media ${mediaId} with Google Gemini (${geminiModel})...`);
         await prisma.media.update({
           where: { id: mediaId },
-          data: { statusDetail: 'Analyzing image with Gemini Vision AI...' },
+          data: { statusDetail: `Analyzing image with Gemini Vision AI (${geminiModel})...` },
         });
 
         const imageBuffer = imageToAnalyze ? fs.readFileSync(imageToAnalyze) : null;
@@ -196,7 +236,7 @@ Return ONLY the raw JSON object. Do not wrap in markdown or backticks. All field
         }
 
         const geminiRes = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey.trim()}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey.trim()}`,
           {
             contents: [{ parts }],
             generationConfig: { response_mime_type: 'application/json' },

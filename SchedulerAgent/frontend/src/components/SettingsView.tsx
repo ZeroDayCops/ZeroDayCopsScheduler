@@ -40,6 +40,7 @@ export const SettingsView: React.FC = () => {
   const [website, setWebsite] = useState('');
   const [cta, setCta] = useState('');
   const [brandVoice, setBrandVoice] = useState('');
+  const [brandDescription, setBrandDescription] = useState('');
   const [emojiStyle, setEmojiStyle] = useState('moderate');
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [newHashtag, setNewHashtag] = useState('');
@@ -66,6 +67,7 @@ export const SettingsView: React.FC = () => {
     setWebsite(currentWorkspace.website || '');
     setCta(currentWorkspace.cta || '');
     setBrandVoice(currentWorkspace.brandVoice || '');
+    setBrandDescription(currentWorkspace.brandDescription || '');
     setEmojiStyle(currentWorkspace.emojiStyle || 'moderate');
     setHashtags(currentWorkspace.defaultHashtags || []);
     setAutomationMode(currentWorkspace.automationMode || 'MANUAL');
@@ -117,7 +119,7 @@ export const SettingsView: React.FC = () => {
     try {
       const res = await fetchApi<{ workspace: any }>(`/workspaces/${currentWorkspace.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ brandName, website, cta, defaultHashtags: hashtags, brandVoice, emojiStyle, automationMode, defaultSlotTime, timezone }),
+        body: JSON.stringify({ brandName, website, cta, defaultHashtags: hashtags, brandVoice, brandDescription, emojiStyle, automationMode, defaultSlotTime, timezone }),
       });
       setCurrentWorkspace(res.workspace);
       queryClient.invalidateQueries({ queryKey: ['workspace', currentWorkspace.id] });
@@ -204,7 +206,12 @@ export const SettingsView: React.FC = () => {
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Brand Voice</label>
-            <textarea value={brandVoice} onChange={e => setBrandVoice(e.target.value)} rows={3} placeholder="E.g., 'Bold, confident, action-oriented...'"
+            <textarea value={brandVoice} onChange={e => setBrandVoice(e.target.value)} rows={2} placeholder="E.g., 'Bold, confident, action-oriented...'"
+              className="w-full px-3.5 py-2.5 bg-[#080d16] border border-white/5 rounded-xl text-slate-200 text-sm resize-none focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Brand Description (Gemini AI Context)</label>
+            <textarea value={brandDescription} onChange={e => setBrandDescription(e.target.value)} rows={3} placeholder="Detailed brand background, target audience, core values, products..."
               className="w-full px-3.5 py-2.5 bg-[#080d16] border border-white/5 rounded-xl text-slate-200 text-sm resize-none focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" />
           </div>
           <div>

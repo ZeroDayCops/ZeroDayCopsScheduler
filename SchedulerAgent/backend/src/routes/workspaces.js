@@ -216,6 +216,7 @@ router.put('/:id', requireAuth, requireWorkspaceAccess, async (req, res) => {
     if (cta !== undefined) updateData.cta = cta;
     if (defaultHashtags !== undefined) updateData.defaultHashtags = defaultHashtags;
     if (brandVoice !== undefined) updateData.brandVoice = brandVoice;
+    if (brandDescription !== undefined) updateData.brandDescription = brandDescription;
     if (emojiStyle !== undefined) updateData.emojiStyle = emojiStyle;
     if (allowVideoImageFallback !== undefined) updateData.allowVideoImageFallback = !!allowVideoImageFallback;
 

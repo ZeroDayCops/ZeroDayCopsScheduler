@@ -6,7 +6,9 @@ const { requireAuth } = require('../middleware/auth');
 const { encrypt } = require('../utils/crypto');
 
 const router = express.Router();
-const REDIRECT_URI_BASE = process.env.REDIRECT_URI_BASE || 'http://localhost:3001/api/oauth';
+const REDIRECT_URI_BASE = process.env.REDIRECT_URI_BASE || 
+  (process.env.APP_URL ? `${process.env.APP_URL}/api/oauth` : 
+  (process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/api/oauth` : 'https://scheduler.zerodaycops.in/api/oauth'));
 
 // Helper to determine if credentials are configured
 function isConfigured(platform) {

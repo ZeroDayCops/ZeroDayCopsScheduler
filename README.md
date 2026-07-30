@@ -1,6 +1,7 @@
 # 🚀 ZeroDayCops SchedulerAgent
 
-> **Next-Generation Multi-Tenant Social Media Scheduling & Ingestion Platform**
+> **Next-Generation Multi-Tenant Social Media Scheduling & Ingestion Platform**  
+> **Production URL:** [https://scheduler.zerodaycops.in](https://scheduler.zerodaycops.in) (Staging: `zero-day-cops-scheduler.vercel.app`)
 
 ZeroDayCops SchedulerAgent is a high-performance, automated social media management engine designed for agencies and creators. It combines AI-driven media analysis with Cloudflare R2 object storage and automated multi-platform distribution across LinkedIn, Pinterest, and YouTube.
 

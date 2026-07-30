@@ -99,6 +99,7 @@ model Workspace {
   cta                     String?
   defaultHashtags         String[]
   brandVoice              String?
+  brandDescription        String?
   emojiStyle              String?
   automationMode          AutomationMode    @default(MANUAL)
   defaultSlotTime         String            @default("20:00")
