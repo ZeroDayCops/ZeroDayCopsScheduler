@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const chokidar = require('chokidar');
 const prisma = require('../prisma');
 const { analyzeMedia } = require('./openrouter');
 const { createIngestionNotification } = require('./notification');
@@ -11,7 +10,8 @@ const UPLOADS_DIR = path.resolve(__dirname, '../../../uploads');
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.avi', '.mkv'];
 
-function initWatcher() {
+async function initWatcher() {
+  const { default: chokidar } = await import('chokidar');
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
@@ -19,6 +19,7 @@ function initWatcher() {
 
   // Watch uploads directory recursively, ignore hidden files
   const watcher = chokidar.watch(UPLOADS_DIR, {
+
     ignored: /(^|[\/\\])\../, // ignore dotfiles
     persistent: true,
     ignoreInitial: true,

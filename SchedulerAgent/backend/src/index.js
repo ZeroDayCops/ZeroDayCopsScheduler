@@ -58,10 +58,8 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const { initWatcher } = require('./services/watcher');
 const { seedDefaultTemplates } = require('./services/template-seeder');
 const { seedPermanentUser } = require('./services/user-seeder');
-const { startScheduler } = require('./services/scheduler');
 
 // Log background worker state on entrypoint load (Vercel cold start or server init)
 const enableWorkers = process.env.RUN_BACKGROUND_WORKERS === 'true';
@@ -71,17 +69,20 @@ function runWorkersIfEnabled() {
   if (process.env.RUN_BACKGROUND_WORKERS === 'true') {
     console.log('[WORKER SYSTEM] RUN_BACKGROUND_WORKERS=true -> Initializing background workers (Chokidar + Node-Cron)...');
     try {
+      const { initWatcher } = require('./services/watcher');
       initWatcher();
     } catch (watcherErr) {
       console.error('[WATCHER ERROR] Failed to start chokidar watcher:', watcherErr.message);
     }
     try {
+      const { startScheduler } = require('./services/scheduler');
       startScheduler();
     } catch (schedErr) {
       console.error('[SCHEDULER ERROR] Failed to start cron scheduler:', schedErr.message);
     }
   }
 }
+
 
 if (require.main === module) {
   app.listen(PORT, async () => {
