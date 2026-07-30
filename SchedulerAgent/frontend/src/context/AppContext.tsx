@@ -27,6 +27,7 @@ interface Workspace {
   automationMode?: string | null;
   defaultSlotTime?: string | null;
   timezone?: string | null;
+  allowVideoImageFallback?: boolean;
   socialAccounts?: any[];
 }
 

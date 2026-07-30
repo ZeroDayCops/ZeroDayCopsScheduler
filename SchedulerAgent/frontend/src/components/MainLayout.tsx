@@ -7,8 +7,8 @@ import { Button } from './ui/Button';
 import { SkeletonCard } from './ui/Skeleton';
 import {
   LayoutDashboard, Settings, LogOut, FolderHeart, CalendarDays, Sparkles,
-  Building, Briefcase, Compass, ArrowRight, PanelLeftClose, PanelLeftOpen,
-  Bell
+  Building, Briefcase, Compass, PanelLeftClose, PanelLeftOpen,
+  Bell, X
 } from 'lucide-react';
 
 const SettingsView = lazy(() => import('./SettingsView').then(m => ({ default: m.SettingsView })));
