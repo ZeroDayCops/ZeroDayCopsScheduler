@@ -83,20 +83,23 @@ function runWorkersIfEnabled() {
   }
 }
 
-app.listen(PORT, async () => {
-  console.log(`SchedulerAgent backend running on port ${PORT}`);
-  
-  // Seed default templates & permanent user
-  try {
-    await seedDefaultTemplates();
-    await seedPermanentUser();
-  } catch (seedErr) {
-    console.error('[SEEDER ERROR] Failed to seed default data:', seedErr.message);
-  }
+if (require.main === module) {
+  app.listen(PORT, async () => {
+    console.log(`SchedulerAgent backend running on port ${PORT}`);
+    
+    // Seed default templates & permanent user
+    try {
+      await seedDefaultTemplates();
+      await seedPermanentUser();
+    } catch (seedErr) {
+      console.error('[SEEDER ERROR] Failed to seed default data:', seedErr.message);
+    }
 
-  // Background workers gate (Disabled on Vercel serverless, enabled on persistent worker servers)
-  runWorkersIfEnabled();
-});
+    // Background workers gate (Disabled on Vercel serverless, enabled on persistent worker servers)
+    runWorkersIfEnabled();
+  });
+}
+
 
 
 module.exports = app;
