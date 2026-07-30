@@ -16,14 +16,6 @@
       "config": { "distDir": "dist" }
     }
   ],
-  "functions": {
-    "SchedulerAgent/backend/src/index.js": {
-      "includeFiles": [
-        "SchedulerAgent/backend/node_modules/.prisma/client/**",
-        "SchedulerAgent/backend/node_modules/@prisma/client/**"
-      ]
-    }
-  },
   "routes": [
     {
       "src": "/api/(.*)",
@@ -35,4 +27,5 @@
     }
   ]
 }
+
 
