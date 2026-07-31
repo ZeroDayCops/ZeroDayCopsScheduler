@@ -2,7 +2,6 @@ const express = require('express');
 const prisma = require('../prisma');
 const { requireAuth, requireWorkspaceAccess } = require('../middleware/auth');
 const { renderPost } = require('../services/renderer');
-const { processDuePosts } = require('../services/scheduler');
 
 const router = express.Router({ mergeParams: true });
 

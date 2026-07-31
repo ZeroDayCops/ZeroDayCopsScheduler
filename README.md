@@ -18,6 +18,17 @@ ZeroDayCops SchedulerAgent is a high-performance, automated social media managem
 
 ---
 
+## 🏗️ System Architecture: Decoupled Two-Process Design
+
+ZeroDayCops SchedulerAgent uses a decoupled two-process architecture for maximum scalability and reliability:
+
+1. **Web API Server (Vercel Serverless Express):** Pure stateless API handling auth, CRUD, OAuth connect flows, and R2 presigned upload URLs. Zero background tasks or cron timers run here.
+2. **Worker Process (Always-On Engine):** Dedicated 24/7 Node process executing watch-folder ingestion, FFmpeg video frame extraction, Gemini 2.5 Flash vision analysis, and scheduled post publishing.
+
+*Both processes share one PostgreSQL database (Supabase) and must share `TOKEN_ENCRYPTION_KEY`.* See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
+
+---
+
 ## 🛠️ Technology Stack
 
 - **Backend:** Node.js, Express 5, Prisma ORM, PostgreSQL

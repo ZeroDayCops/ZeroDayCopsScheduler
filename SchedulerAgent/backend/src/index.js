@@ -62,32 +62,9 @@ app.use((err, _req, res, _next) => {
 const { seedDefaultTemplates } = require('./services/template-seeder');
 const { seedPermanentUser } = require('./services/user-seeder');
 
-// Log background worker state on entrypoint load (Vercel cold start or server init)
-const enableWorkers = process.env.VERCEL !== '1' && process.env.RUN_BACKGROUND_WORKERS !== 'false';
-console.log(`[WORKER SYSTEM] Environment check: RUN_BACKGROUND_WORKERS=${process.env.RUN_BACKGROUND_WORKERS || 'default_true'}. Background workers (Chokidar watcher & Node-Cron scheduler) are ${enableWorkers ? 'ENABLED' : 'DISABLED'}.`);
-
-function runWorkersIfEnabled() {
-  if (enableWorkers) {
-    console.log('[WORKER SYSTEM] Initializing background workers (Chokidar + Node-Cron)...');
-    try {
-      const { initWatcher } = require('./services/watcher');
-      initWatcher();
-    } catch (watcherErr) {
-      console.error('[WATCHER ERROR] Failed to start chokidar watcher:', watcherErr.message);
-    }
-    try {
-      const { startScheduler } = require('./services/scheduler');
-      startScheduler();
-    } catch (schedErr) {
-      console.error('[SCHEDULER ERROR] Failed to start cron scheduler:', schedErr.message);
-    }
-  }
-}
-
-
 if (require.main === module) {
   app.listen(PORT, async () => {
-    console.log(`SchedulerAgent backend running on port ${PORT}`);
+    console.log(`SchedulerAgent API backend running on port ${PORT}`);
     
     // Seed default templates & permanent user
     try {
@@ -96,12 +73,7 @@ if (require.main === module) {
     } catch (seedErr) {
       console.error('[SEEDER ERROR] Failed to seed default data:', seedErr.message);
     }
-
-    // Background workers gate (Disabled on Vercel serverless, enabled on persistent worker servers)
-    runWorkersIfEnabled();
   });
 }
-
-
 
 module.exports = app;
