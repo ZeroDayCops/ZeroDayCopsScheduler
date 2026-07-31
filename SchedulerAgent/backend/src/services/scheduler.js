@@ -174,6 +174,8 @@ async function processDuePosts() {
       }
     }
   }
+
+  return claimed.length;
 }
 
 /**

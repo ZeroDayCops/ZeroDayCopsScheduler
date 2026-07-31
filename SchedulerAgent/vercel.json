@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/process-due-posts",
-      "schedule": "* * * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }

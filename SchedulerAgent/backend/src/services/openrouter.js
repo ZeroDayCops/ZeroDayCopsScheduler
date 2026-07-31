@@ -98,9 +98,9 @@ function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, wor
   ];
 
   const copies = [
-    `Elevate your content stream with ${cleanTitle}. Crafted in a ${brandVoice} tone to inspire engagement across all platforms. ${emojiStr}`,
-    `Immerse your audience in ${cleanTitle}. Perfectly tailored to embody our ${brandVoice} brand voice. ${emojiStr}`,
-    `Meet ${cleanTitle} — designed to captivate and deliver high-impact results for ${workspace.brandName || 'your business'}. ${emojiStr}`,
+    `A clean visual snapshot highlighting ${cleanTitle}. Built to share key project milestones and deliver clear, high-impact results. ${emojiStr}`,
+    `Presenting ${cleanTitle} — a concise look at our latest visual update. Designed to captivate your audience with clear brand detail. ${emojiStr}`,
+    `Here's a closer look at ${cleanTitle}. Elevating our visual content stream with sharp focus and professional quality. ${emojiStr}`,
   ];
 
   const hashPool = [
@@ -123,13 +123,13 @@ function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, wor
 }
 
 /**
- * Primary AI Analysis Function:
- * Tries Gemini Vision API -> Local Ollama (qwen2.5:1.5b) -> OpenRouter -> Dynamic Generator.
+ * Main Analysis Function
  */
 async function analyzeMedia(mediaId) {
-  let tempTrimmedPath = null;
   let tempFramePath = null;
+  let tempTrimmedPath = null;
   let tempR2DownloadedPath = null;
+  let imageToAnalyze = null;
 
   try {
     const media = await prisma.media.findUnique({
@@ -138,106 +138,98 @@ async function analyzeMedia(mediaId) {
     });
 
     if (!media) {
-      console.error(`Media asset not found: ${mediaId}`);
+      console.error(`[AI ENGINE] Media ${mediaId} not found.`);
       return;
     }
 
     await prisma.media.update({
       where: { id: mediaId },
-      data: {
-        status: 'ANALYZING',
-        statusDetail: media.mediaType === 'VIDEO' ? 'Processing video...' : 'Analyzing media...'
-      },
+      data: { status: 'ANALYZING', statusDetail: 'Preparing asset for analysis...' },
     });
 
-    let activeFilepath = media.filepath;
+    let localPath = media.filepath;
 
-    // Fix 1.2: If local file does not exist on disk but media has r2Url/r2Key, download via R2 S3 SDK
-    if ((!activeFilepath || !fs.existsSync(activeFilepath)) && (media.r2Url || media.r2Key)) {
+    if (!fs.existsSync(localPath) && media.r2Key) {
+      console.log(`[AI ENGINE] Local asset missing at ${localPath}, downloading from R2 (${media.r2Key})...`);
+      const ext = path.extname(media.filename) || (media.mediaType === 'VIDEO' ? '.mp4' : '.jpg');
+      tempR2DownloadedPath = path.join(os.tmpdir(), `r2-analysis-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
       try {
-        console.log(`[AI ENGINE] Local file missing for media ${mediaId}. Downloading from R2 via S3 SDK...`);
-        const ext = path.extname(media.filename) || '.tmp';
-        tempR2DownloadedPath = path.join(os.tmpdir(), `r2-download-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
-        await downloadFromR2(media.r2Key || media.r2Url, tempR2DownloadedPath);
-        activeFilepath = tempR2DownloadedPath;
-        console.log(`[AI ENGINE] Downloaded R2 media ${mediaId} to temporary path: ${activeFilepath}`);
+        await downloadFromR2(media.r2Key, tempR2DownloadedPath);
+        localPath = tempR2DownloadedPath;
+        console.log(`[AI ENGINE] Downloaded R2 asset to ${tempR2DownloadedPath}`);
       } catch (r2DlErr) {
-        console.warn(`[AI ENGINE] Failed to download R2 media file for ${mediaId}:`, r2DlErr.message);
+        console.warn(`[AI ENGINE] R2 download failed for analysis:`, r2DlErr.message);
       }
     }
 
-    // Handle Video Frame Extraction
     if (media.mediaType === 'VIDEO') {
-      try {
-        if (activeFilepath && fs.existsSync(activeFilepath)) {
-          tempTrimmedPath = await trimVideo(activeFilepath);
-          activeFilepath = tempTrimmedPath;
+      if (fs.existsSync(localPath)) {
+        await prisma.media.update({
+          where: { id: mediaId },
+          data: { statusDetail: 'Trimming video & extracting frame...' },
+        });
+
+        try {
+          tempTrimmedPath = await trimVideo(localPath);
+          tempFramePath = await extractVideoFrame(tempTrimmedPath);
+          imageToAnalyze = tempFramePath;
+        } catch (ffmpegErr) {
+          console.warn('[AI ENGINE] FFmpeg processing failed, proceeding without frame:', ffmpegErr.message);
         }
-      } catch (trimErr) {
-        console.warn('[AI ENGINE] Video trim failed or timed out:', trimErr.message);
       }
-      try {
-        if (activeFilepath && fs.existsSync(activeFilepath)) {
-          tempFramePath = await extractVideoFrame(activeFilepath);
-        }
-      } catch (frameErr) {
-        console.warn('[AI ENGINE] Video frame extraction failed or timed out:', frameErr.message);
+    } else {
+      if (fs.existsSync(localPath)) {
+        imageToAnalyze = localPath;
       }
     }
 
-    const imageToAnalyze = tempFramePath || (media.mediaType === 'IMAGE' ? activeFilepath : null);
-    const brandVoice = media.workspace.brandVoice || 'bold, creative, and professional';
-    const brandDescription = media.workspace.brandDescription || '';
+    const brandVoice = media.workspace.brandVoice || 'Bold & Precise';
     const emojiStyle = media.workspace.emojiStyle || 'moderate';
+    const brandDescription = media.workspace.brandDescription || '';
 
-    // ─── Step 3: Fetch historical caption style-matching examples ─────
     let historicalExamplesText = '';
     try {
-      const pastPosts = await prisma.scheduledPost.findMany({
+      const pastMedia = await prisma.media.findMany({
         where: {
           workspaceId: media.workspaceId,
-          status: 'PUBLISHED',
+          status: 'ANALYZED',
+          id: { not: mediaId },
         },
-        orderBy: { publishedAt: 'desc' },
+        orderBy: { createdAt: 'desc' },
         take: 3,
+        select: { aiMasterJson: true },
       });
 
-      if (pastPosts.length > 0) {
-        const exampleSnippets = pastPosts
-          .map((post, idx) => {
-            const content = post.renderedContent || {};
-            const text = content.description || content.caption || (typeof content === 'string' ? content : '');
-            if (!text) return null;
-            const truncated = text.length > 200 ? text.slice(0, 200) + '...' : text;
-            return `Example ${idx + 1}: "${truncated}"`;
-          })
-          .filter(Boolean);
+      const examples = pastMedia
+        .map(m => m.aiMasterJson)
+        .filter(j => j && j.description && j.headline);
 
-        if (exampleSnippets.length > 0) {
-          historicalExamplesText = `\nHistorical Style Reference Examples (match tone and formatting, do not duplicate content):\n${exampleSnippets.join('\n')}\n`;
-        }
+      if (examples.length > 0) {
+        historicalExamplesText = '\n\nReference Examples of This Brand\'s Post Copy Style:\n' +
+          examples.map((ex, i) => `Example ${i+1}:\nHeadline: ${ex.headline}\nCopy: ${ex.description}`).join('\n\n');
       }
     } catch (histErr) {
       console.warn('[AI ENGINE] Failed to fetch historical style examples:', histErr.message);
     }
 
-    let systemPrompt = `You are an expert social media brand manager and visual analyst. 
+    let systemPrompt = `You are an expert social media brand manager crafting a professional Instagram caption and visual summary. 
 ANALYZE THE ATTACHED IMAGE OR VIDEO FRAME IN DETAIL.
 
-CRITICAL CONTENT REQUIREMENTS:
-1. Grounding & Detail: Your description MUST directly describe and reference at least 2-3 specific visual elements physically present in the image (e.g. people, attire, specific objects, certificate/text, colors, background setting).
-2. Length: Write a rich, detailed description of 2-3 full sentences.
-3. ABSOLUTE PROHIBITION ON TEMPLATE ECHOING: NEVER include instruction phrases like "tailored to embody our brand voice", "crafted in a tone", or "in a bold tone". Write real, natural social media copy directly.
-4. ABSOLUTE PROHIBITION ON FILENAMES & DATE STRINGS: Do NOT use file names, date strings (e.g. 31july, Y0853, 0834), or raw IDs anywhere in product, headline, description, keywords, or hashtags.
+CAPTION STYLE & CONTENT REQUIREMENTS:
+1. Professional Instagram Style: Write a polished, professional Instagram caption that serves as a clear, engaging summary note of what is depicted in the image.
+2. Visual Grounding: Directly describe 2-3 specific physical elements present in the image (e.g., people, attire, certificates/documents, setting, colors, objects).
+3. Structure: 2-3 clean, punchy sentences with a professional tone, clean layout, and tasteful emojis.
+4. NO TEMPLATE ECHOING: Never use phrases like "tailored to embody", "crafted in a tone", or "brand voice". Write authentic copy directly.
+5. NO FILENAMES OR DATE STRINGS: Never include file names, date strings (e.g., 31july, Y0853), or raw IDs anywhere in the output.
 
 Schema Requirements (return ONLY a single valid raw JSON object):
 {
-  "product": "Specific, real title of what is shown in the image (NOT a filename or generic string)",
-  "headline": "Engaging headline hook summarizing the visual content",
-  "description": "2-3 sentence engaging post copy grounded in 2-3 physical visual details from the image",
+  "product": "Professional title summarizing the image content",
+  "headline": "Punchy Instagram hook summarizing the visual",
+  "description": "Professional 2-3 sentence Instagram caption summarizing the image with 2-3 specific visual details",
   "keywords": ["keyword1", "keyword2", "keyword3"],
   "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
-  "mood": "Specific visual vibe (e.g., proud, inspirational, professional)",
+  "mood": "Visual vibe (e.g. professional, inspiring, sleek)",
   "suggested_cta": "Actionable call to action"
 }`;
 
