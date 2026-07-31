@@ -477,22 +477,47 @@ async function publishToYouTube(post, decryptedToken, media) {
   }
 }
 
+const { downloadFromR2 } = require('./r2Storage');
+
 /**
- * General router map for platforms
+ * General router map for platforms with R2 remote file download guard
  */
 async function publishToPlatform(post, decryptedToken, media) {
-  switch (post.platform) {
-    case 'LINKEDIN':
-      return publishToLinkedIn(post, decryptedToken, media);
-    case 'PINTEREST':
-      return publishToPinterest(post, decryptedToken, media);
-    case 'YOUTUBE':
-      return publishToYouTube(post, decryptedToken, media);
-    default:
-      return {
-        success: false,
-        error: `Unsupported platform: ${post.platform}`,
-      };
+  let activeMedia = { ...media };
+  let downloadedTempFile = null;
+
+  try {
+    // R2 Remote File Downloader Guard: If local file doesn't exist but r2Url or r2Key is set, download from R2 using S3 SDK
+    if (!activeMedia.filepath || !fs.existsSync(activeMedia.filepath)) {
+      const r2Target = activeMedia.r2Key || activeMedia.r2Url;
+      if (r2Target) {
+        console.log(`[PUBLISHER R2 DOWNLOAD] Local file missing at ${activeMedia.filepath}, downloading from R2: ${r2Target}`);
+        const tempDir = path.join(os.tmpdir(), 'r2_downloads');
+        downloadedTempFile = path.join(tempDir, `r2-pub-${Date.now()}-${path.basename(activeMedia.filename || 'media')}`);
+        await downloadFromR2(r2Target, downloadedTempFile);
+        activeMedia.filepath = downloadedTempFile;
+      } else {
+        throw new Error(`Media file not found locally or on R2 (${activeMedia.filename || 'unknown'})`);
+      }
+    }
+
+    switch (post.platform) {
+      case 'LINKEDIN':
+        return await publishToLinkedIn(post, decryptedToken, activeMedia);
+      case 'PINTEREST':
+        return await publishToPinterest(post, decryptedToken, activeMedia);
+      case 'YOUTUBE':
+        return await publishToYouTube(post, decryptedToken, activeMedia);
+      default:
+        return {
+          success: false,
+          error: `Unsupported platform: ${post.platform}`,
+        };
+    }
+  } finally {
+    if (downloadedTempFile && fs.existsSync(downloadedTempFile)) {
+      try { fs.unlinkSync(downloadedTempFile); } catch {}
+    }
   }
 }
 

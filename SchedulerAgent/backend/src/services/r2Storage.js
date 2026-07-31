@@ -106,10 +106,56 @@ async function generatePresignedUploadUrl(destinationKey, mimeType) {
   };
 }
 
+/**
+ * Downloads an object from Cloudflare R2 using AWS SDK GetObjectCommand.
+ * @param {string} key Key or URL inside R2 bucket.
+ * @param {string} destinationPath Absolute local path to save the file.
+ * @returns {Promise<string>} Local file path
+ */
+async function downloadFromR2(key, destinationPath) {
+  if (!s3Client) {
+    throw new Error('R2 S3 Client is not configured');
+  }
+
+  let cleanKey = key;
+  if (key.includes(`${bucketName}/`)) {
+    cleanKey = key.split(`${bucketName}/`)[1];
+  } else if (key.startsWith('http://') || key.startsWith('https://')) {
+    const urlObj = new URL(key);
+    cleanKey = urlObj.pathname.replace(/^\//, '');
+    if (cleanKey.startsWith(`${bucketName}/`)) {
+      cleanKey = cleanKey.replace(`${bucketName}/`, '');
+    }
+  }
+
+  console.log(`[R2 STORAGE] Downloading key ${cleanKey} from bucket ${bucketName} to ${destinationPath}...`);
+  const command = new GetObjectCommand({
+    Bucket: bucketName,
+    Key: cleanKey,
+  });
+
+  const response = await s3Client.send(command);
+  const stream = response.Body;
+
+  fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+
+  await new Promise((resolve, reject) => {
+    const fileStream = fs.createWriteStream(destinationPath);
+    stream.pipe(fileStream);
+    stream.on('error', reject);
+    fileStream.on('finish', resolve);
+    fileStream.on('error', reject);
+  });
+
+  console.log(`[R2 STORAGE] Successfully downloaded ${cleanKey} to ${destinationPath}`);
+  return destinationPath;
+}
+
 module.exports = {
   s3Client,
   uploadToR2,
   deleteFromR2,
+  downloadFromR2,
   generatePresignedUploadUrl,
   bucketName,
 };

@@ -63,12 +63,12 @@ const { seedDefaultTemplates } = require('./services/template-seeder');
 const { seedPermanentUser } = require('./services/user-seeder');
 
 // Log background worker state on entrypoint load (Vercel cold start or server init)
-const enableWorkers = process.env.RUN_BACKGROUND_WORKERS === 'true';
-console.log(`[WORKER SYSTEM] Environment check: RUN_BACKGROUND_WORKERS=${process.env.RUN_BACKGROUND_WORKERS || 'unset'}. Background workers (Chokidar watcher & Node-Cron scheduler) are ${enableWorkers ? 'ENABLED' : 'DISABLED'}.`);
+const enableWorkers = process.env.VERCEL !== '1' && process.env.RUN_BACKGROUND_WORKERS !== 'false';
+console.log(`[WORKER SYSTEM] Environment check: RUN_BACKGROUND_WORKERS=${process.env.RUN_BACKGROUND_WORKERS || 'default_true'}. Background workers (Chokidar watcher & Node-Cron scheduler) are ${enableWorkers ? 'ENABLED' : 'DISABLED'}.`);
 
 function runWorkersIfEnabled() {
-  if (process.env.RUN_BACKGROUND_WORKERS === 'true') {
-    console.log('[WORKER SYSTEM] RUN_BACKGROUND_WORKERS=true -> Initializing background workers (Chokidar + Node-Cron)...');
+  if (enableWorkers) {
+    console.log('[WORKER SYSTEM] Initializing background workers (Chokidar + Node-Cron)...');
     try {
       const { initWatcher } = require('./services/watcher');
       initWatcher();
