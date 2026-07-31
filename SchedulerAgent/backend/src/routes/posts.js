@@ -107,7 +107,13 @@ router.post('/scheduled-posts', requireAuth, requireWorkspaceAccess, async (req,
     });
 
     if (!socialAccount) {
-      return res.status(400).json({ error: `Social account connection for ${upperPlatform} not initialized` });
+      return res.status(400).json({
+        error: `System database record missing: SocialAccount row for platform ${upperPlatform} does not exist in workspace ${workspaceId}. Please contact system administrator.`
+      });
+    }
+
+    if (socialAccount.status !== 'CONNECTED' && process.env.ALLOW_UNCONNECTED_SCHEDULING !== 'true') {
+      console.warn(`[SCHEDULER NOTICE] Scheduling post for ${upperPlatform} on workspace ${workspaceId} while SocialAccount status is ${socialAccount.status}.`);
     }
 
     // Save scheduled post
@@ -215,7 +221,9 @@ router.put('/scheduled-posts/:id', requireAuth, requireWorkspaceAccess, async (r
       });
 
       if (!socialAccount) {
-        return res.status(400).json({ error: `Social account connection for ${activePlatform} not initialized` });
+        return res.status(400).json({
+          error: `System database record missing: SocialAccount row for platform ${activePlatform} does not exist in workspace ${workspaceId}.`
+        });
       }
 
       updateData.mediaId = activeMediaId;
@@ -262,6 +270,8 @@ router.delete('/scheduled-posts/:id', requireAuth, requireWorkspaceAccess, async
   }
 });
 
+const { createDateInTimezone } = require('../services/filename-parser');
+
 /**
  * GET /api/workspaces/:workspaceId/calendar
  * Returns scheduled posts in a date range, grouped by date.
@@ -276,12 +286,30 @@ router.get('/calendar', requireAuth, requireWorkspaceAccess, async (req, res) =>
       return res.status(400).json({ error: 'from and to query parameters are required' });
     }
 
+    const timezone = req.workspace?.timezone || 'Asia/Kolkata';
+    let startDate = new Date(from);
+    let endDate = new Date(to);
+
+    // Expand date-only strings (YYYY-MM-DD) to full 24-hour day ranges in workspace timezone
+    if (typeof from === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(from.trim())) {
+      const [y, m, d] = from.trim().split('-').map(Number);
+      startDate = createDateInTimezone(y, m - 1, d, 0, 0, timezone);
+    }
+
+    if (typeof to === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(to.trim())) {
+      const [y, m, d] = to.trim().split('-').map(Number);
+      endDate = createDateInTimezone(y, m - 1, d, 23, 59, timezone);
+      endDate.setMilliseconds(999);
+    } else if (!isNaN(endDate.getTime()) && endDate.getUTCHours() === 0 && endDate.getUTCMinutes() === 0 && endDate.getUTCSeconds() === 0) {
+      endDate.setUTCHours(23, 59, 59, 999);
+    }
+
     const posts = await prisma.scheduledPost.findMany({
       where: {
         workspaceId,
         scheduledFor: {
-          gte: new Date(from),
-          lte: new Date(to),
+          gte: startDate,
+          lte: endDate,
         },
       },
       orderBy: { scheduledFor: 'asc' },

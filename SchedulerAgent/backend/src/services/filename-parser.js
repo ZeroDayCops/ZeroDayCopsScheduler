@@ -35,6 +35,56 @@ const MONTH_NAMES = [
  * @param {string} timezone - Workspace timezone string (e.g. "Asia/Kolkata")
  * @returns {object} Parsed schedule or explicit validation error object
  */
+/**
+ * Helper to construct a UTC Date object representing a specific local time in an IANA timezone.
+ */
+function createDateInTimezone(year, monthIndex, day, hour, minute, timeZone = 'Asia/Kolkata') {
+  const localAsUtc = Date.UTC(year, monthIndex, day, hour, minute, 0);
+  const dateTest = new Date(localAsUtc);
+  
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  });
+  
+  const parts = formatter.formatToParts(dateTest);
+  const p = {};
+  parts.forEach(part => { p[part.type] = part.value; });
+  let hr = parseInt(p.hour, 10);
+  if (hr === 24) hr = 0;
+  
+  const targetAsUtc = Date.UTC(
+    parseInt(p.year, 10),
+    parseInt(p.month, 10) - 1,
+    parseInt(p.day, 10),
+    hr,
+    parseInt(p.minute, 10),
+    parseInt(p.second, 10)
+  );
+  
+  const offsetMs = targetAsUtc - localAsUtc;
+  return new Date(localAsUtc - offsetMs);
+}
+
+/**
+ * Deterministic Filename Schedule Parser.
+ *
+ * Algorithm:
+ *  1. Extract filename & remove extension
+ *  2. Convert to lowercase
+ *  3. Remove spaces
+ *  4. Remove extra suffixes like (final), (copy), (v2), (1), _copy, -final
+ *  5. Regex parse: ^([0-9]{1,2})(jan|...)([0-9]{2}|[0-9]{4})?$
+ *  6. Validate Day (1-31), Hour (0-23), Minute (0-59)
+ *  7. Construct UTC timestamp explicitly in target workspace timezone.
+ *
+ * @param {string} filename - The original file name (e.g. "27july2243.png")
+ * @param {string} defaultSlotTime - Workspace default publish time in HH:mm (e.g. "20:00")
+ * @param {string} timezone - Workspace timezone string (e.g. "Asia/Kolkata")
+ * @returns {object} Parsed schedule or explicit validation error object
+ */
 function parseFilenameSchedule(filename, defaultSlotTime = '20:00', timezone = 'Asia/Kolkata') {
   if (!filename || typeof filename !== 'string') {
     return { isMatch: false, error: 'Invalid filename input' };
@@ -48,18 +98,13 @@ function parseFilenameSchedule(filename, defaultSlotTime = '20:00', timezone = '
 
   // 4. Remove common extra suffixes e.g. (final), (copy), (v2), (1), _copy, -final, -v2
   cleanName = cleanName.replace(/[\(\-_]?(final|copy|v\d+|\d+)[\)]?$/gi, (match) => {
-    // Only strip suffix if it's explicitly a suffix like (final), (copy), (v2), (1)
-    // Avoid stripping 2243 or 0815 if they are part of the main pattern
     if (/final|copy|v\d+/i.test(match) || /\(\d+\)/.test(match)) {
       return '';
     }
     return match;
   });
 
-  // 5. Strict Regex:
-  // Day: [0-9]{1,2}
-  // Month: jan|january|...
-  // Optional Time: [0-9]{2} or [0-9]{4}
+  // 5. Strict Regex
   const regex = /^([0-9]{1,2})(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)([0-9]{2}|[0-9]{4})?$/;
   const match = cleanName.match(regex);
 
@@ -72,7 +117,7 @@ function parseFilenameSchedule(filename, defaultSlotTime = '20:00', timezone = '
 
   const day = parseInt(match[1], 10);
   const monthStr = match[2];
-  const timeDigits = match[3]; // undefined, 2 digits ("20"), or 4 digits ("2243")
+  const timeDigits = match[3];
 
   // Validate Day
   if (day < 1 || day > 31 || MONTH_MAP[monthStr] === undefined) {
@@ -91,11 +136,9 @@ function parseFilenameSchedule(filename, defaultSlotTime = '20:00', timezone = '
     hour = defH !== undefined ? defH : 20;
     minute = defM !== undefined ? defM : 0;
   } else if (timeDigits.length === 2) {
-    // 2 Digits e.g. "20" -> 20:00, "09" -> 09:00, "14" -> 14:00
     hour = parseInt(timeDigits, 10);
     minute = 0;
   } else if (timeDigits.length === 4) {
-    // 4 Digits e.g. "2243" -> 22:43, "0815" -> 08:15, "1730" -> 17:30
     hour = parseInt(timeDigits.slice(0, 2), 10);
     minute = parseInt(timeDigits.slice(2, 4), 10);
   }
@@ -105,18 +148,18 @@ function parseFilenameSchedule(filename, defaultSlotTime = '20:00', timezone = '
     return { isMatch: false, error: 'Invalid filename time.' };
   }
 
-  // Calculate year deterministically
+  // Calculate year & date explicitly in target workspace timezone
   const now = new Date();
   let year = now.getFullYear();
-  let scheduledDate = new Date(year, monthIndex, day, hour, minute, 0, 0);
+  let scheduledDate = createDateInTimezone(year, monthIndex, day, hour, minute, timezone);
 
   // If date in current year has already passed, schedule for next year
   if (scheduledDate < now) {
-    scheduledDate = new Date(year + 1, monthIndex, day, hour, minute, 0, 0);
     year += 1;
+    scheduledDate = createDateInTimezone(year, monthIndex, day, hour, minute, timezone);
   }
 
-  // Formatted display strings (24-hour HH:mm format)
+  // Formatted display strings
   const monthName = MONTH_NAMES[monthIndex];
   const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
   const timeFormatted = `${pad(hour)}:${pad(minute)}`;
@@ -137,4 +180,4 @@ function parseFilenameSchedule(filename, defaultSlotTime = '20:00', timezone = '
   };
 }
 
-module.exports = { parseFilenameSchedule };
+module.exports = { parseFilenameSchedule, createDateInTimezone };

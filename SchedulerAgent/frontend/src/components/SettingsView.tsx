@@ -305,11 +305,26 @@ export const SettingsView: React.FC = () => {
             ))}
           </div>
         </div>
-        {automationMode !== 'MANUAL' && (
-          <div className="animate-fade-in">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
             <Input label="Default Time Slot" icon={<Clock className="w-4 h-4" />} type="time" value={defaultSlotTime} onChange={e => setDefaultSlotTime(e.target.value)} />
           </div>
-        )}
+          <div>
+            <label htmlFor="workspace-timezone" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Workspace Timezone (IANA)</label>
+            <div className="relative">
+              <select id="workspace-timezone" value={timezone} onChange={e => setTimezone(e.target.value)}
+                className="w-full py-2.5 px-3.5 bg-[#080d16] border border-white/5 rounded-xl text-slate-200 text-sm appearance-none focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition cursor-pointer">
+                <option value="Asia/Kolkata">Asia/Kolkata (IST +05:30)</option>
+                <option value="America/New_York">America/New_York (EST/EDT -05:00)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT -08:00)</option>
+                <option value="Europe/London">Europe/London (GMT/BST +00:00)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (JST +09:00)</option>
+                <option value="UTC">UTC (Coordinated Universal Time)</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+            </div>
+          </div>
+        </div>
         <div className="pt-2 border-t border-white/5">
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={allowVideoImageFallback} onChange={e => setAllowVideoImageFallback(e.target.checked)} className="w-4 h-4 text-indigo-500 rounded bg-[#070a13] border-white/10 focus:ring-indigo-500" />

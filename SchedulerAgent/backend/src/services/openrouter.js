@@ -7,6 +7,13 @@ const prisma = require('../prisma');
 const { handlePostAnalysisAutomation } = require('./automation');
 
 /**
+ * ARCHITECTURAL NOTICE (Vercel Serverless Fragility):
+ * Running ffmpeg via exec() inside Vercel serverless functions is fundamentally fragile due to
+ * ephemeral disk storage, non-guaranteed ffmpeg binaries, and strict 10s-60s function execution limits.
+ * Video frame extraction should ideally run on a persistent worker process or background task queue.
+ */
+
+/**
  * Extracts a representative video frame at 2 seconds using ffmpeg.
  */
 function extractVideoFrame(videoPath) {
@@ -16,7 +23,7 @@ function extractVideoFrame(videoPath) {
       `frame-${Date.now()}-${Math.round(Math.random() * 1e9)}.jpg`
     );
     const cmd = `ffmpeg -y -ss 00:00:02 -i "${videoPath}" -vframes 1 "${outputPath}"`;
-    exec(cmd, (error) => {
+    exec(cmd, { timeout: 25000 }, (error) => {
       if (error) {
         console.error('[FFMPEG FRAME ERROR]:', error.message);
         return reject(error);
@@ -37,7 +44,7 @@ function trimVideo(inputPath) {
       `trimmed-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`
     );
     const cmd = `ffmpeg -y -ss 0 -t 20 -i "${inputPath}" -c copy "${outputPath}"`;
-    exec(cmd, (error) => {
+    exec(cmd, { timeout: 25000 }, (error) => {
       if (error) {
         console.error('[FFMPEG ERROR] Failed to trim video:', error.message);
         return reject(error);
@@ -117,6 +124,7 @@ function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, wor
 async function analyzeMedia(mediaId) {
   let tempTrimmedPath = null;
   let tempFramePath = null;
+  let tempR2DownloadedPath = null;
 
   try {
     const media = await prisma.media.findUnique({
@@ -139,17 +147,38 @@ async function analyzeMedia(mediaId) {
 
     let activeFilepath = media.filepath;
 
+    // Fix 1.2: If local file does not exist on disk but media has r2Url, download it to temp path first
+    if ((!activeFilepath || !fs.existsSync(activeFilepath)) && media.r2Url) {
+      try {
+        console.log(`[AI ENGINE] Local file missing for media ${mediaId}. Downloading from R2 URL...`);
+        const r2DownloadRes = await axios.get(media.r2Url, { responseType: 'arraybuffer', timeout: 15000 });
+        const ext = path.extname(media.filename) || '.tmp';
+        tempR2DownloadedPath = path.join(os.tmpdir(), `r2-download-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+        fs.writeFileSync(tempR2DownloadedPath, Buffer.from(r2DownloadRes.data));
+        activeFilepath = tempR2DownloadedPath;
+        console.log(`[AI ENGINE] Downloaded R2 media ${mediaId} to temporary path: ${activeFilepath}`);
+      } catch (r2DlErr) {
+        console.warn(`[AI ENGINE] Failed to download R2 media file for ${mediaId}:`, r2DlErr.message);
+      }
+    }
+
     // Handle Video Frame Extraction
     if (media.mediaType === 'VIDEO') {
       try {
-        tempTrimmedPath = await trimVideo(media.filepath);
-        activeFilepath = tempTrimmedPath;
-      } catch {
-        activeFilepath = media.filepath;
+        if (activeFilepath && fs.existsSync(activeFilepath)) {
+          tempTrimmedPath = await trimVideo(activeFilepath);
+          activeFilepath = tempTrimmedPath;
+        }
+      } catch (trimErr) {
+        console.warn('[AI ENGINE] Video trim failed or timed out:', trimErr.message);
       }
       try {
-        tempFramePath = await extractVideoFrame(activeFilepath);
-      } catch {}
+        if (activeFilepath && fs.existsSync(activeFilepath)) {
+          tempFramePath = await extractVideoFrame(activeFilepath);
+        }
+      } catch (frameErr) {
+        console.warn('[AI ENGINE] Video frame extraction failed or timed out:', frameErr.message);
+      }
     }
 
     const imageToAnalyze = tempFramePath || (media.mediaType === 'IMAGE' ? activeFilepath : null);
@@ -388,6 +417,9 @@ Return ONLY the raw JSON object. Do not wrap in markdown or backticks. All field
     }
     if (tempTrimmedPath && fs.existsSync(tempTrimmedPath)) {
       try { fs.unlinkSync(tempTrimmedPath); } catch {}
+    }
+    if (tempR2DownloadedPath && fs.existsSync(tempR2DownloadedPath)) {
+      try { fs.unlinkSync(tempR2DownloadedPath); } catch {}
     }
   }
 }

@@ -16,13 +16,15 @@ import {
   Plus, Sparkles, Link, RefreshCw, Trash2
 } from 'lucide-react';
 
+import { formatInWorkspaceTimezone } from '../lib/date-utils';
+
 const PLATFORM_NAMES: Record<string, string> = { LINKEDIN: 'LinkedIn', PINTEREST: 'Pinterest', YOUTUBE: 'YouTube' };
 
 interface PreviewContent { title?: string; body: string; hashtags?: string[]; warnings?: string[] }
 
 export const PlannerView: React.FC = () => {
   const { currentWorkspace } = useApp();
-  const mediaQuery = useMedia({ status: 'ANALYZED' });
+  const mediaQuery = useMedia();
   const postsQuery = usePosts();
   const createPost = useCreatePost();
   const deletePost = useDeletePost();
@@ -40,7 +42,7 @@ export const PlannerView: React.FC = () => {
   // Confirm dialog state
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'publish'; id: string } | null>(null);
 
-  const analyzedMedia = mediaQuery.data?.media || [];
+  const allMedia = mediaQuery.data?.media || [];
   const scheduledPosts = postsQuery.data?.posts || [];
 
   // Default scheduled time
@@ -120,17 +122,34 @@ export const PlannerView: React.FC = () => {
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">
             {mediaQuery.isLoading ? <SkeletonList count={3} /> :
              mediaQuery.isError ? <ErrorState onRetry={() => mediaQuery.refetch()} /> :
-             analyzedMedia.length === 0 ? <div className="text-center text-xs text-slate-500 italic p-6">No analyzed assets. Upload in Media Library first.</div> :
-             analyzedMedia.map(m => (
-              <div key={m.id} role="button" tabIndex={0} onClick={() => setSelectedMedia(m)} onKeyDown={e => { if (e.key === 'Enter') setSelectedMedia(m); }}
-                className={`border p-3 rounded-xl transition cursor-pointer flex gap-3 items-center ${selectedMedia?.id === m.id ? 'border-indigo-500 bg-indigo-500/5' : 'border-white/5 bg-[#080d16]/40 hover:border-white/10'}`}>
-                <div className="w-12 h-12 bg-slate-900 border border-white/10 rounded-lg overflow-hidden flex-shrink-0 relative">
-                  <img src={`${API_BASE}/media/${m.id}/thumbnail`} alt={m.filename} className="w-full h-full object-cover" />
-                  {m.mediaType === 'VIDEO' && <div className="absolute inset-0 flex items-center justify-center bg-black/30"><Video className="w-4 h-4 text-white" /></div>}
+             allMedia.length === 0 ? <div className="text-center text-xs text-slate-500 italic p-6">No media assets found. Upload in Media Library first.</div> :
+             allMedia.map(m => {
+               const isAnalyzed = m.status === 'ANALYZED';
+               const isProcessing = m.status === 'NEW' || m.status === 'ANALYZING';
+               const isFailed = m.status === 'FAILED';
+               return (
+                <div key={m.id} role="button" tabIndex={0}
+                  onClick={() => { if (isAnalyzed) setSelectedMedia(m); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && isAnalyzed) setSelectedMedia(m); }}
+                  className={`border p-3 rounded-xl transition flex gap-3 items-center ${
+                    !isAnalyzed ? 'opacity-60 cursor-not-allowed border-white/5 bg-[#080d16]/20' :
+                    selectedMedia?.id === m.id ? 'border-indigo-500 bg-indigo-500/5 cursor-pointer' : 'border-white/5 bg-[#080d16]/40 hover:border-white/10 cursor-pointer'
+                  }`}>
+                  <div className="w-12 h-12 bg-slate-900 border border-white/10 rounded-lg overflow-hidden flex-shrink-0 relative">
+                    <img src={`${API_BASE}/media/${m.id}/thumbnail`} alt={m.filename} className="w-full h-full object-cover" />
+                    {m.mediaType === 'VIDEO' && <div className="absolute inset-0 flex items-center justify-center bg-black/30"><Video className="w-4 h-4 text-white" /></div>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-slate-300 truncate">{m.filename}</div>
+                    <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                      {isProcessing ? <span className="text-indigo-400 font-semibold flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />Processing...</span> :
+                       isFailed ? <span className="text-rose-400 font-semibold">Analysis Failed</span> :
+                       (m.aiMasterJson?.product || 'Ready to Schedule')}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0"><div className="text-xs font-bold text-slate-300 truncate">{m.filename}</div><div className="text-[10px] text-slate-500 truncate mt-0.5">{m.aiMasterJson?.product || 'Parsed'}</div></div>
-              </div>
-            ))}
+               );
+             })}
           </div>
         </Card>
 
@@ -208,7 +227,7 @@ export const PlannerView: React.FC = () => {
                       </div>
                       <div>
                         <div className="flex items-center gap-2"><span className="text-xs font-bold uppercase tracking-wider text-slate-400">{PLATFORM_NAMES[post.platform] || post.platform}</span><Badge type={post.status} /></div>
-                        <div className="text-[11px] text-slate-500 mt-1">Scheduled: <strong className="text-slate-300">{new Date(post.scheduledFor).toLocaleString()}</strong></div>
+                        <div className="text-[11px] text-slate-500 mt-1">Scheduled: <strong className="text-slate-300">{formatInWorkspaceTimezone(post.scheduledFor, currentWorkspace?.timezone || 'Asia/Kolkata')} ({currentWorkspace?.timezone || 'Asia/Kolkata'})</strong></div>
                         {post.externalPostId && <div className="text-[10px] text-indigo-400 font-bold mt-0.5 truncate max-w-xs flex items-center gap-1"><Link className="w-3 h-3" />ID: {post.externalPostId}</div>}
                       </div>
                     </div>

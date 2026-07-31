@@ -30,6 +30,26 @@ async function repairMissingSocialAccounts() {
       console.log(`[SEEDER] Repaired workspace "${ws.brandName}" — inserted ${missing.length} missing SocialAccount row(s): ${missing.join(', ')}`);
     }
   }
+
+  // One-time data repair for stuck media row
+  try {
+    const stuckRow = await prisma.media.findUnique({
+      where: { id: '7b179ddc-d79f-49bd-a9a1-7daf0f88f7e3' },
+    });
+    if (stuckRow && stuckRow.status === 'ANALYZING') {
+      await prisma.media.update({
+        where: { id: '7b179ddc-d79f-49bd-a9a1-7daf0f88f7e3' },
+        data: {
+          status: 'FAILED',
+          statusDetail: null,
+          aiMasterJson: { error: 'Media analysis processing timed out (reconciled).' },
+        },
+      });
+      console.log('[SEEDER REPAIR] Repaired stuck video media row 7b179ddc-d79f-49bd-a9a1-7daf0f88f7e3 -> FAILED.');
+    }
+  } catch (repairErr) {
+    console.warn('[SEEDER REPAIR WARN]:', repairErr.message);
+  }
 }
 
 async function seedPermanentUser() {

@@ -213,6 +213,9 @@ router.get('/:id/thumbnail', requireAuth, async (req, res) => {
 
     const absolutePath = getAbsoluteFilePath(media.filepath);
     if (!fs.existsSync(absolutePath)) {
+      if (media.r2Url) {
+        return res.redirect(media.r2Url);
+      }
       return res.status(404).json({ error: 'Physical media file missing' });
     }
 

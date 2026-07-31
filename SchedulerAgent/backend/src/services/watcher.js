@@ -52,22 +52,35 @@ async function initWatcher() {
         return;
       }
 
-      const [workspaceId, filename] = parts;
+      const [folderIdentifier, filename] = parts;
       if (filename.startsWith('trimmed-')) {
         console.log(`Watcher ignoring trimmed temp file: ${filename}`);
         return;
       }
-      console.log(`Watcher detected new file: ${filename} in workspace ${workspaceId}`);
+      console.log(`Watcher detected new file: ${filename} in workspace directory ${folderIdentifier}`);
 
-      // Verify workspace exists in DB
-      const workspace = await prisma.workspace.findUnique({
-        where: { id: workspaceId },
+      // Verify workspace exists in DB by ID first, then fallback to brandName / slug matching
+      let workspace = await prisma.workspace.findUnique({
+        where: { id: folderIdentifier },
       });
 
       if (!workspace) {
-        console.warn(`Workspace not found for directory: ${workspaceId}. Skipping file ingestion.`);
+        workspace = await prisma.workspace.findFirst({
+          where: {
+            OR: [
+              { brandName: folderIdentifier },
+              { brandName: { equals: folderIdentifier, mode: 'insensitive' } },
+            ],
+          },
+        });
+      }
+
+      if (!workspace) {
+        console.warn(`Workspace not found for directory: ${folderIdentifier}. Skipping file ingestion.`);
         return;
       }
+
+      const workspaceId = workspace.id;
 
       // Check file extension
       const ext = path.extname(filename).toLowerCase();
@@ -126,7 +139,45 @@ async function initWatcher() {
     console.error(`Chokidar watcher error:`, error);
   });
 
+  // Run initial stuck-media reconciliation sweep when watcher initializes
+  reconcileStuckMedia().catch((recErr) => {
+    console.error('[WATCHER RECONCILE ERROR]:', recErr.message);
+  });
+
   return watcher;
 }
 
-module.exports = { initWatcher, UPLOADS_DIR };
+/**
+ * Sweeps the database for any Media rows stuck in ANALYZING for > 10 minutes
+ * and flips them to FAILED to prevent silent hanging.
+ */
+async function reconcileStuckMedia() {
+  try {
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const stuckRows = await prisma.media.findMany({
+      where: {
+        status: 'ANALYZING',
+        updatedAt: { lte: tenMinutesAgo },
+      },
+    });
+
+    if (stuckRows.length > 0) {
+      console.log(`[WATCHER RECONCILE] Found ${stuckRows.length} media row(s) stuck in ANALYZING. Flipping to FAILED...`);
+      for (const row of stuckRows) {
+        await prisma.media.update({
+          where: { id: row.id },
+          data: {
+            status: 'FAILED',
+            statusDetail: null,
+            aiMasterJson: { error: 'Media analysis processing timed out (stuck in ANALYZING > 10m).' },
+          },
+        });
+        console.log(`[WATCHER RECONCILE] Set Media ${row.id} (${row.filename}) to FAILED.`);
+      }
+    }
+  } catch (err) {
+    console.error('[WATCHER RECONCILE] Reconciliation sweep failed:', err.message);
+  }
+}
+
+module.exports = { initWatcher, reconcileStuckMedia, UPLOADS_DIR };
