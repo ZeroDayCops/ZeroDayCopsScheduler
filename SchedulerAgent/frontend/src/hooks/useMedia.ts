@@ -30,8 +30,8 @@ export function useUploadMedia() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (file: File) => {
-      // If file > 4.5MB, attempt direct Cloudflare R2 presigned upload (bypasses Vercel 4.5MB body limit)
-      if (file.size > 4.5 * 1024 * 1024) {
+      // If file > 3.0MB, attempt direct Cloudflare R2 presigned upload (bypasses Vercel HTTP 413 limit)
+      if (file.size > 3.0 * 1024 * 1024) {
         try {
           const presigned = await fetchApi<any>(`/workspaces/${currentWorkspace!.id}/media/upload-url`, {
             method: 'POST',

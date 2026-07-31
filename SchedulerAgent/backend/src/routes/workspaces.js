@@ -7,6 +7,7 @@ const fs = require('fs');
 const prisma = require('../prisma');
 
 const { requireAuth, requireWorkspaceAccess } = require('../middleware/auth');
+const { analyzeMedia } = require('../services/openrouter');
 const router = express.Router();
 
 
@@ -472,7 +473,8 @@ router.post('/:id/media/:mediaId/complete-r2', requireAuth, requireWorkspaceAcce
       return res.status(404).json({ error: 'Media asset not found' });
     }
 
-    console.log(`R2 upload completed for media ${media.id} (${media.filename}).`);
+    console.log(`R2 upload completed for media ${media.id} (${media.filename}). Triggering instant Vision analysis async.`);
+    analyzeMedia(media.id).catch((err) => console.error(`[VISION ANALYSIS ERROR]:`, err.message));
     res.json({ success: true, media });
   } catch (err) {
     console.error('Complete R2 upload error:', err);
@@ -541,7 +543,8 @@ router.post('/:id/media', requireAuth, requireWorkspaceAccess, upload.single('fi
       },
     });
 
-    console.log(`Created Media row via manual upload for ${filename}. R2 URL: ${r2Url || 'None'}. Status set to NEW for worker processing.`);
+    console.log(`Created Media row via manual upload for ${filename}. Triggering instant Vision analysis async.`);
+    analyzeMedia(media.id).catch((err) => console.error(`[VISION ANALYSIS ERROR]:`, err.message));
 
     res.status(201).json({ media });
   } catch (err) {
