@@ -13,7 +13,7 @@ import { UploadCloud, Image, Video, ChevronRight, Sparkles, Tag, Hash, Smile, Tr
 interface MediaItem {
   id: string; filename: string; mediaType: 'IMAGE' | 'VIDEO';
   status: 'NEW' | 'ANALYZING' | 'ANALYZED' | 'FAILED';
-  statusDetail?: string | null; aiMasterJson?: any; createdAt: string;
+  statusDetail?: string | null; aiMasterJson?: any; aiDegraded?: boolean; createdAt: string;
 }
 
 const ElapsedTimer: React.FC<{ createdAt: string }> = ({ createdAt }) => {
@@ -158,7 +158,14 @@ export const MediaLibraryView: React.FC = () => {
 
           {selectedMedia.status === 'ANALYZED' && selectedMedia.aiMasterJson && (
             <div className="space-y-4 border-t border-white/5 pt-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5"><Sparkles className="w-4 h-4 text-indigo-400" />Gemini Master Content</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5"><Sparkles className="w-4 h-4 text-indigo-400" />Gemini Master Content</h4>
+                {selectedMedia.aiDegraded && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-md">
+                    ⚠️ Auto-generated (review before publishing)
+                  </span>
+                )}
+              </div>
               <div className="bg-[#070b14] border border-white/5 rounded-xl p-4 space-y-3 text-xs">
                 {selectedMedia.aiMasterJson.product && <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Theme</span><div className="text-sm font-bold text-indigo-300 mt-1">{selectedMedia.aiMasterJson.product}</div></div>}
                 {selectedMedia.aiMasterJson.headline && <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Headline</span><div className="font-bold text-slate-200 mt-1 italic">"{selectedMedia.aiMasterJson.headline}"</div></div>}

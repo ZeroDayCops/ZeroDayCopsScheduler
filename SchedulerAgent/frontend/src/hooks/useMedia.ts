@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext';
 interface MediaItem {
   id: string; filename: string; mediaType: 'IMAGE' | 'VIDEO';
   status: 'NEW' | 'ANALYZING' | 'ANALYZED' | 'FAILED';
-  statusDetail?: string | null; aiMasterJson?: any; createdAt: string;
+  statusDetail?: string | null; aiMasterJson?: any; aiDegraded?: boolean; createdAt: string;
 }
 
 export function useMedia(opts?: { status?: string }) {

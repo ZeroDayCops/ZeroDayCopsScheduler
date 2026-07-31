@@ -221,19 +221,25 @@ async function analyzeMedia(mediaId) {
       console.warn('[AI ENGINE] Failed to fetch historical style examples:', histErr.message);
     }
 
-    let systemPrompt = `You are an expert social media brand manager. Analyze the provided media and return a SINGLE, valid JSON object following this exact schema:
+    let systemPrompt = `You are an expert social media brand manager and visual analyst. 
+ANALYZE THE ATTACHED IMAGE OR VIDEO FRAME IN DETAIL.
 
+CRITICAL CONTENT REQUIREMENTS:
+1. Grounding & Detail: Your description MUST directly describe and reference at least 2-3 specific visual elements physically present in the image (e.g. people, attire, specific objects, certificate/text, colors, background setting).
+2. Length: Write a rich, detailed description of 2-3 full sentences.
+3. ABSOLUTE PROHIBITION ON TEMPLATE ECHOING: NEVER include instruction phrases like "tailored to embody our brand voice", "crafted in a tone", or "in a bold tone". Write real, natural social media copy directly.
+4. ABSOLUTE PROHIBITION ON FILENAMES & DATE STRINGS: Do NOT use file names, date strings (e.g. 31july, Y0853, 0834), or raw IDs anywhere in product, headline, description, keywords, or hashtags.
+
+Schema Requirements (return ONLY a single valid raw JSON object):
 {
-  "product": "Short, catchy product/feature/theme title",
-  "headline": "Attention-grabbing headline hook",
-  "description": "Engaging social media post copy written in a ${brandVoice} tone with ${emojiStyle} emojis",
+  "product": "Specific, real title of what is shown in the image (NOT a filename or generic string)",
+  "headline": "Engaging headline hook summarizing the visual content",
+  "description": "2-3 sentence engaging post copy grounded in 2-3 physical visual details from the image",
   "keywords": ["keyword1", "keyword2", "keyword3"],
   "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
-  "mood": "Visual mood/vibe (e.g. sleek, energetic, premium)",
-  "suggested_cta": "Clear call to action"
-}
-
-Return ONLY the raw JSON object. Do not wrap in markdown or backticks. All fields are required.`;
+  "mood": "Specific visual vibe (e.g., proud, inspirational, professional)",
+  "suggested_cta": "Actionable call to action"
+}`;
 
     if (brandDescription) {
       systemPrompt += `\n\nWorkspace Brand Context:\n${brandDescription}`;
@@ -243,10 +249,32 @@ Return ONLY the raw JSON object. Do not wrap in markdown or backticks. All field
     }
 
     let resultJson = null;
+    let isDegraded = false;
 
-    // ─── PROVIDER 1: Google Gemini Vision API (API Key + Model Env) ─
+    // ─── Live Dynamic Gemini Model Resolution via ListModels ───
     const geminiKey = process.env.GEMINI_API_KEY;
-    const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+    let geminiModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+    if (geminiKey && geminiKey.trim() && !geminiKey.includes('your-')) {
+      try {
+        const modelsRes = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey.trim()}`, { timeout: 10000 });
+        const availableNames = (modelsRes.data.models || [])
+          .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+          .map(m => m.name.replace('models/', ''));
+        
+        // Pick preferred active vision model from available list
+        const preferredModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
+        const resolved = preferredModels.find(p => availableNames.includes(p)) || availableNames.find(n => n.includes('flash'));
+        if (resolved) {
+          geminiModel = resolved;
+          console.log(`[AI ENGINE] Live ListModels resolved active Gemini model: ${geminiModel}`);
+        }
+      } catch (listErr) {
+        console.warn('[AI ENGINE] Failed to fetch live ListModels list, using configured default:', geminiModel, listErr.message);
+      }
+    }
+
+    // ─── PROVIDER 1: Google Gemini Vision API ───────────────────────
     if (!resultJson && geminiKey && geminiKey.trim() && !geminiKey.includes('your-')) {
       try {
         console.log(`[AI ENGINE] Analyzing media ${mediaId} with Google Gemini (${geminiModel})...`);
@@ -261,14 +289,6 @@ Return ONLY the raw JSON object. Do not wrap in markdown or backticks. All field
         if (imageToAnalyze && fs.existsSync(imageToAnalyze)) {
           imageBuffer = fs.readFileSync(imageToAnalyze);
           mimeType = getMimeType(imageToAnalyze);
-        } else if (media.r2Url && media.mediaType === 'IMAGE') {
-          try {
-            const r2Res = await axios.get(media.r2Url, { responseType: 'arraybuffer', timeout: 10000 });
-            imageBuffer = Buffer.from(r2Res.data);
-            mimeType = r2Res.headers['content-type'] || getMimeType(media.filename);
-          } catch (r2FetchErr) {
-            console.warn('[AI ENGINE] Could not fetch R2 image buffer for Gemini analysis:', r2FetchErr.message);
-          }
         }
 
         const parts = [{ text: systemPrompt }];
@@ -287,7 +307,7 @@ Return ONLY the raw JSON object. Do not wrap in markdown or backticks. All field
             contents: [{ parts }],
             generationConfig: { response_mime_type: 'application/json' },
           },
-          { timeout: 25000 }
+          { timeout: 35000 }
         );
 
         const rawText = geminiRes.data.candidates[0].content.parts[0].text;
@@ -308,76 +328,56 @@ Return ONLY the raw JSON object. Do not wrap in markdown or backticks. All field
         });
 
         const ollamaRes = await axios.post(
-          'http://localhost:11434/api/chat',
+          'http://127.0.0.1:11434/api/generate',
           {
             model: 'qwen2.5:1.5b',
-            messages: [{ role: 'user', content: systemPrompt }],
+            prompt: systemPrompt,
             stream: false,
             format: 'json',
           },
           { timeout: 15000 }
         );
 
-        const rawText = ollamaRes.data.message.content;
-        resultJson = JSON.parse(rawText.replace(/```json\n?|\n?```/g, '').trim());
-        console.log(`[AI ENGINE] Local Ollama Qwen2.5 analysis successful for media ${mediaId}`);
-      } catch (err) {
-        console.warn('[AI ENGINE] Local Ollama failed:', err.message);
+        resultJson = JSON.parse(ollamaRes.data.response);
+        console.log(`[AI ENGINE] Ollama analysis successful for media ${mediaId}`);
+      } catch (ollamaErr) {
+        console.warn('[AI ENGINE] Ollama fallback unavailable:', ollamaErr.message);
       }
     }
 
-    // ─── PROVIDER 3: OpenRouter API ─────────────────────────────────
-    const openRouterKey = process.env.OPENROUTER_API_KEY;
-    if (!resultJson && openRouterKey && openRouterKey.trim() && !openRouterKey.includes('your-')) {
+    // ─── PROVIDER 3: OpenRouter API Fallback ────────────────────────
+    const openrouterKey = process.env.OPENROUTER_API_KEY;
+    if (!resultJson && openrouterKey && openrouterKey.trim() && !openrouterKey.includes('your-')) {
       try {
-        console.log(`[AI ENGINE] Attempting OpenRouter API...`);
-        const model = process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash:free';
-        const imageBuffer = imageToAnalyze ? fs.readFileSync(imageToAnalyze) : null;
-        const mimeType = imageToAnalyze ? getMimeType(imageToAnalyze) : 'image/jpeg';
-
-        const content = [{ type: 'text', text: systemPrompt }];
-        if (imageBuffer) {
-          content.push({
-            type: 'image_url',
-            image_url: { url: `data:${mimeType};base64,${imageBuffer.toString('base64')}` },
-          });
-        }
-
+        console.log(`[AI ENGINE] Attempting OpenRouter API fallback...`);
+        const model = process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash';
         const orRes = await axios.post(
           'https://openrouter.ai/api/v1/chat/completions',
           {
             model,
-            messages: [{ role: 'user', content }],
+            messages: [{ role: 'user', content: systemPrompt }],
             response_format: { type: 'json_object' },
           },
           {
-            headers: { Authorization: `Bearer ${openRouterKey.trim()}` },
-            timeout: 25000,
+            headers: {
+              Authorization: `Bearer ${openrouterKey.trim()}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 20000,
           }
         );
 
-        const rawText = orRes.data.choices[0].message.content;
-        resultJson = JSON.parse(rawText.replace(/```json\n?|\n?```/g, '').trim());
+        resultJson = JSON.parse(orRes.data.choices[0].message.content);
         console.log(`[AI ENGINE] OpenRouter analysis successful for media ${mediaId}`);
-      } catch (err) {
-        console.warn('[AI ENGINE] OpenRouter API failed:', err.message);
+      } catch (orErr) {
+        console.warn('[AI ENGINE] OpenRouter API fallback failed:', orErr.message);
       }
     }
 
-    // ─── PROVIDER 4: Smart Dynamic Generator (Fallback) ─────────────
-    if (!resultJson) {
-      console.log(`[AI ENGINE] Generating dynamic tailored copy for media ${mediaId}...`);
-      resultJson = generateDynamicContent(
-        media.filename,
-        media.mediaType,
-        brandVoice,
-        emojiStyle,
-        media.workspace
-      );
-    }
-
-    // Ensure required schema keys exist
-    if (!resultJson.product || !resultJson.headline || !resultJson.description) {
+    // ─── PROVIDER 4: Dynamic Generator (Degraded Fallback) ──────────
+    if (!resultJson || !resultJson.product || !resultJson.headline || !resultJson.description) {
+      console.warn(`[AI ENGINE] All AI vision providers failed for media ${mediaId}. Falling through to degraded dynamic generator.`);
+      isDegraded = true;
       resultJson = generateDynamicContent(
         media.filename,
         media.mediaType,
@@ -394,6 +394,7 @@ Return ONLY the raw JSON object. Do not wrap in markdown or backticks. All field
         status: 'ANALYZED',
         statusDetail: null,
         aiMasterJson: resultJson,
+        aiDegraded: isDegraded,
       },
     });
 

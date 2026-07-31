@@ -162,6 +162,7 @@ model Media {
   status       MediaStatus @default(NEW)
   statusDetail String?
   aiMasterJson Json?
+  aiDegraded   Boolean     @default(false)
   createdAt    DateTime    @default(now())
   workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   scheduledPosts ScheduledPost[]
