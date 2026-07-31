@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../prisma');
 const { requireAuth, requireWorkspaceAccess } = require('../middleware/auth');
 const { renderPost } = require('../services/renderer');
+const { processDuePosts } = require('../services/scheduler');
 
 const router = express.Router({ mergeParams: true });
 
@@ -12,6 +13,10 @@ const router = express.Router({ mergeParams: true });
 router.get('/scheduled-posts', requireAuth, requireWorkspaceAccess, async (req, res) => {
   try {
     const { workspaceId } = req;
+
+    // Trigger asynchronous check for due posts on every queue fetch
+    processDuePosts().catch(err => console.error('[AUTO-QUEUE DUE CHECK ERROR]:', err.message));
+
     const posts = await prisma.scheduledPost.findMany({
       where: { workspaceId },
       include: {
