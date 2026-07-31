@@ -69,18 +69,23 @@ function getMimeType(filePath) {
   return mimeMap[ext] || 'image/jpeg';
 }
 
+const { downloadFromR2 } = require('./r2Storage');
+
 /**
  * Generates dynamic, file-unique copy if offline or un-keyed.
  */
 function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, workspace) {
-  const baseName = path.basename(filename, path.extname(filename))
+  let baseName = path.basename(filename, path.extname(filename))
     .replace(/^file[-_]?/i, '')
     .replace(/[-_]/g, ' ')
     .trim();
-  
-  const cleanTitle = baseName.length > 2 
+
+  // Strip date schedule patterns (e.g. 31july0834, 27july, 30jul2000) from product name
+  baseName = baseName.replace(/^[0-9]{1,2}(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[0-9]*/gi, '').trim();
+
+  const cleanTitle = (baseName.length > 2)
     ? baseName.replace(/\b\w/g, c => c.toUpperCase()) 
-    : `${workspace.brandName || 'Brand'} Visual ${Date.now().toString().slice(-4)}`;
+    : `${workspace.brandName || 'Brand'} Visual`;
 
   const emojiList = emojiStyle === 'heavy' ? ['🚀', '✨', '🔥', '📸', '⚡'] : emojiStyle === 'moderate' ? ['✨', '🎯'] : ['✨'];
   const emojiStr = emojiList.join(' ');
@@ -147,14 +152,13 @@ async function analyzeMedia(mediaId) {
 
     let activeFilepath = media.filepath;
 
-    // Fix 1.2: If local file does not exist on disk but media has r2Url, download it to temp path first
-    if ((!activeFilepath || !fs.existsSync(activeFilepath)) && media.r2Url) {
+    // Fix 1.2: If local file does not exist on disk but media has r2Url/r2Key, download via R2 S3 SDK
+    if ((!activeFilepath || !fs.existsSync(activeFilepath)) && (media.r2Url || media.r2Key)) {
       try {
-        console.log(`[AI ENGINE] Local file missing for media ${mediaId}. Downloading from R2 URL...`);
-        const r2DownloadRes = await axios.get(media.r2Url, { responseType: 'arraybuffer', timeout: 15000 });
+        console.log(`[AI ENGINE] Local file missing for media ${mediaId}. Downloading from R2 via S3 SDK...`);
         const ext = path.extname(media.filename) || '.tmp';
         tempR2DownloadedPath = path.join(os.tmpdir(), `r2-download-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
-        fs.writeFileSync(tempR2DownloadedPath, Buffer.from(r2DownloadRes.data));
+        await downloadFromR2(media.r2Key || media.r2Url, tempR2DownloadedPath);
         activeFilepath = tempR2DownloadedPath;
         console.log(`[AI ENGINE] Downloaded R2 media ${mediaId} to temporary path: ${activeFilepath}`);
       } catch (r2DlErr) {
