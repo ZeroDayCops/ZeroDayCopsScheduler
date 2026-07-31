@@ -151,7 +151,7 @@ export const MediaLibraryView: React.FC = () => {
             })()}
             <div className="flex gap-4">
               <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Type</span><div className="font-bold text-slate-300 mt-0.5 flex items-center gap-1">{selectedMedia.mediaType === 'VIDEO' ? <Video className="w-3.5 h-3.5 text-purple-400" /> : <Image className="w-3.5 h-3.5 text-indigo-400" />}{selectedMedia.mediaType}</div></div>
-              <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Ingested</span><div className="font-bold text-slate-300 mt-0.5">{new Date(selectedMedia.createdAt).toLocaleString()}</div></div>
+              <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Ingested</span><div className="font-bold text-slate-300 mt-0.5">{formatInWorkspaceTimezone(selectedMedia.createdAt, currentWorkspace?.timezone || 'Asia/Kolkata')}</div></div>
             </div>
             <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Status</span><div className="mt-1"><MediaStatusBadge media={selectedMedia} /></div></div>
           </div>
