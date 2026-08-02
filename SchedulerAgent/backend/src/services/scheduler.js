@@ -5,6 +5,12 @@ const { refreshTokenIfNeeded } = require('./oauth-refresh');
 const { publishToPlatform } = require('./publishers');
 const { createNotification, checkAndCreateMediaPublishSummaryNotification } = require('./notification');
 
+let schedulerLastRunAt = null;
+
+function getSchedulerLastRunAt() {
+  return schedulerLastRunAt ? schedulerLastRunAt.toISOString() : null;
+}
+
 /**
  * Claims due posts atomically to prevent double publishing.
  */
@@ -22,6 +28,7 @@ async function claimDuePosts() {
  * Processes all due scheduled posts with retry backoff and notification delivery.
  */
 async function processDuePosts() {
+  schedulerLastRunAt = new Date();
   let claimed = [];
   try {
     claimed = await claimDuePosts();
@@ -37,11 +44,24 @@ async function processDuePosts() {
   console.log(`[SCHEDULER] Atomically claimed ${claimed.length} due posts.`);
 
   for (const post of claimed) {
+    const scheduledTime = new Date(post.scheduledFor).getTime();
+    const now = Date.now();
+    const delayMs = Math.max(0, now - scheduledTime);
+    const GRACE_PERIOD_MS = 3 * 60 * 1000; // 3 minutes
+
+    let attemptMessage = `Attempting publication to ${post.platform}.`;
+    if (delayMs > GRACE_PERIOD_MS) {
+      const totalSeconds = Math.floor(delayMs / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      attemptMessage = `Attempting publication to ${post.platform} (Published late — ${minutes}m ${seconds}s after scheduled time, likely due to a backend cold-start or sleep gap).`;
+    }
+
     await prisma.postLog.create({
       data: {
         scheduledPostId: post.id,
         event: 'ATTEMPT',
-        message: `Attempting publication to ${post.platform}.`,
+        message: attemptMessage,
       },
     });
 
@@ -189,4 +209,4 @@ function startScheduler() {
   return task;
 }
 
-module.exports = { startScheduler, processDuePosts, claimDuePosts };
+module.exports = { startScheduler, processDuePosts, claimDuePosts, getSchedulerLastRunAt };
