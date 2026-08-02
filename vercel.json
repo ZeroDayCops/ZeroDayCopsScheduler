@@ -28,7 +28,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "SchedulerAgent/frontend/index.html"
+      "dest": "/index.html"
     }
   ]
 }

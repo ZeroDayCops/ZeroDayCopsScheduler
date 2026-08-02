@@ -1,0 +1,8 @@
+node_modules
+pgsocket
+pgdata
+uploads
+*.log
+.git
+SchedulerAgent/backend/pgsocket
+SchedulerAgent/backend/pgdata
