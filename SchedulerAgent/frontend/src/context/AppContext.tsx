@@ -78,10 +78,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshUser = async () => {
     setIsLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     try {
       const response = await fetch(`${API_BASE}/auth/me`, {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        signal: controller.signal,
       });
 
       if (response.ok) {
@@ -105,7 +109,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (err) {
       console.error('Failed to restore auth session:', err);
+      setIsAuthenticated(false);
+      setUser(null);
+      setOrganizations([]);
+      setCurrentOrgState(null);
+      setWorkspaces([]);
+      setCurrentWorkspaceState(null);
     } finally {
+      clearTimeout(timeoutId);
       setIsLoading(false);
     }
   };

@@ -76,7 +76,20 @@ const SmartHome: React.FC = () => {
 const GuestOnly: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useApp();
 
-  if (isLoading) return null;
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#090d16] flex flex-col items-center justify-center text-[#f8fafc]">
+        <div className="relative flex flex-col items-center">
+          <div className="w-16 h-16 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin"></div>
+          <Shield className="w-6 h-6 text-indigo-400 absolute top-5 animate-pulse" />
+          <span className="mt-6 text-xs uppercase tracking-widest text-slate-500 font-bold animate-pulse">
+            Loading System
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 
   return <>{children}</>;
