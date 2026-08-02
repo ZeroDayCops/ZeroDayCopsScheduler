@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: zerodaycops-scheduler-backend
+    runtime: node
+    region: singapore
+    plan: free
+    rootDir: SchedulerAgent/backend
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000

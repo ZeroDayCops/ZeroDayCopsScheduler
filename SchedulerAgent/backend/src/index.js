@@ -61,11 +61,15 @@ app.use((err, _req, res, _next) => {
 
 const { seedDefaultTemplates } = require('./services/template-seeder');
 const { seedPermanentUser } = require('./services/user-seeder');
+const { startScheduler } = require('./services/scheduler');
 
-if (require.main === module) {
+if (require.main === module || process.env.RENDER) {
   app.listen(PORT, async () => {
     console.log(`SchedulerAgent API backend running on port ${PORT}`);
     
+    // Start native 24/7 background scheduler worker
+    startScheduler();
+
     // Seed default templates & permanent user
     try {
       await seedDefaultTemplates();
