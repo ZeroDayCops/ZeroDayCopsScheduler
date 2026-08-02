@@ -47,7 +47,7 @@ router.post('/register', async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // Create org + user + OWNER membership in a transaction
+    // Create org + user + OWNER membership + default workspace in a transaction
     const result = await prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
         data: { name: orgName },
@@ -65,7 +65,32 @@ router.post('/register', async (req, res) => {
         },
       });
 
-      return { user, org };
+      const workspace = await tx.workspace.create({
+        data: {
+          organizationId: org.id,
+          brandName: `${orgName} Workspace`,
+          brandVoice: 'Bold & Precise',
+          emojiStyle: 'moderate',
+        },
+      });
+
+      const platforms = ['LINKEDIN', 'PINTEREST', 'YOUTUBE'];
+      await tx.socialAccount.createMany({
+        data: platforms.map((platform) => ({
+          workspaceId: workspace.id,
+          platform,
+          status: 'NOT_CONNECTED',
+        })),
+      });
+
+      await tx.workspaceAccess.create({
+        data: {
+          userId: user.id,
+          workspaceId: workspace.id,
+        },
+      });
+
+      return { user, org, workspace };
     });
 
     // Issue JWT
@@ -89,6 +114,10 @@ router.post('/register', async (req, res) => {
       organization: {
         id: result.org.id,
         name: result.org.name,
+      },
+      workspace: {
+        id: result.workspace.id,
+        brandName: result.workspace.brandName,
       },
     });
   } catch (err) {

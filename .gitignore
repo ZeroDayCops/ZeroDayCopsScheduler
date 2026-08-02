@@ -23,6 +23,7 @@ uploads/
 .env.local
 .env.*.local
 *.pem
+client_secret_*.json
 
 # Logs & temp files
 *.log

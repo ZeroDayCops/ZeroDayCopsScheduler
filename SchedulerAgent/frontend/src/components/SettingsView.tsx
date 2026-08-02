@@ -176,7 +176,15 @@ export const SettingsView: React.FC = () => {
     }
   };
 
-  if (!currentWorkspace) return <div className="text-center text-slate-400 py-20">Select a workspace first.</div>;
+  if (!currentWorkspace) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] text-center max-w-md mx-auto space-y-4 py-12">
+        <Building className="w-12 h-12 text-slate-500" />
+        <h2 className="text-xl font-bold text-white">No Workspace Selected</h2>
+        <p className="text-slate-400 text-xs">Create or select a brand workspace to configure brand identity and social account connections.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-16 animate-fade-in max-w-5xl">

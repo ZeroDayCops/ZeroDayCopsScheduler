@@ -48,6 +48,15 @@ interface AppContextType {
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   fetchWorkspaces: (orgId: string) => Promise<void>;
+  createWorkspace: (data: {
+    organizationId: string;
+    brandName: string;
+    website?: string;
+    cta?: string;
+    defaultHashtags?: string[];
+    brandVoice?: string;
+    emojiStyle?: string;
+  }) => Promise<Workspace>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -72,7 +81,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const response = await fetch(`${API_BASE}/auth/me`, {
         headers: { 'Content-Type': 'application/json' },
-        // Pass credentials (token cookie)
         credentials: 'include',
       });
 
@@ -82,7 +90,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setOrganizations(data.organizations || []);
         setIsAuthenticated(true);
 
-        // Auto-select first organization if none selected
         if (data.organizations && data.organizations.length > 0) {
           const defaultOrg = data.organizations[0];
           setCurrentOrgState(defaultOrg);
@@ -110,11 +117,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       if (response.ok) {
         const data = await response.json();
-        setWorkspaces(data.workspaces || []);
+        const wsList = data.workspaces || [];
+        setWorkspaces(wsList);
         
-        // Auto-select first workspace if none selected
-        if (data.workspaces && data.workspaces.length > 0) {
-          setCurrentWorkspaceState(data.workspaces[0]);
+        if (wsList.length > 0) {
+          setCurrentWorkspaceState(wsList[0]);
         } else {
           setCurrentWorkspaceState(null);
         }
@@ -122,6 +129,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.error('Failed to fetch workspaces:', err);
     }
+  };
+
+  const createWorkspace = async (workspaceData: {
+    organizationId: string;
+    brandName: string;
+    website?: string;
+    cta?: string;
+    defaultHashtags?: string[];
+    brandVoice?: string;
+    emojiStyle?: string;
+  }): Promise<Workspace> => {
+    const response = await fetch(`${API_BASE}/workspaces`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(workspaceData),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error || 'Failed to create workspace');
+    }
+
+    const data = await response.json();
+    const newWs = data.workspace;
+    setWorkspaces((prev) => [...prev, newWs]);
+    setCurrentWorkspaceState(newWs);
+    return newWs;
   };
 
   const setCurrentOrg = async (org: Organization | null) => {
@@ -182,6 +217,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTab,
         setCurrentOrg,
         setCurrentWorkspace,
+        createWorkspace,
         login,
         logout,
         refreshUser,

@@ -206,7 +206,7 @@ router.get('/:id', requireAuth, requireWorkspaceAccess, async (req, res) => {
 router.put('/:id', requireAuth, requireWorkspaceAccess, async (req, res) => {
   try {
     const workspaceId = req.params.id;
-    const { brandName, website, cta, defaultHashtags, brandVoice, emojiStyle, automationMode, defaultSlotTime, timezone, allowVideoImageFallback } = req.body;
+    const { brandName, website, cta, defaultHashtags, brandVoice, brandDescription, emojiStyle, automationMode, defaultSlotTime, timezone, allowVideoImageFallback } = req.body;
 
     // Additional security: Only OWNER/ADMIN membership role in workspace's organization
     const membership = await prisma.membership.findUnique({

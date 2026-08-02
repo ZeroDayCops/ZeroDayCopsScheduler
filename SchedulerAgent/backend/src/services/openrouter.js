@@ -212,29 +212,40 @@ async function analyzeMedia(mediaId) {
       console.warn('[AI ENGINE] Failed to fetch historical style examples:', histErr.message);
     }
 
-    let systemPrompt = `You are an expert social media brand manager crafting a professional Instagram caption and visual summary. 
+    let systemPrompt = `You are an expert social media brand manager crafting an authentic, context-aware caption and visual summary for "${media.workspace.brandName || 'the brand'}".
 ANALYZE THE ATTACHED IMAGE OR VIDEO FRAME IN DETAIL.
 
-CAPTION STYLE & CONTENT REQUIREMENTS:
-1. Professional Instagram Style: Write a polished, professional Instagram caption that serves as a clear, engaging summary note of what is depicted in the image.
-2. Visual Grounding: Directly describe 2-3 specific physical elements present in the image (e.g., people, attire, certificates/documents, setting, colors, objects).
-3. Structure: 2-3 clean, punchy sentences with a professional tone, clean layout, and tasteful emojis.
-4. NO TEMPLATE ECHOING: Never use phrases like "tailored to embody", "crafted in a tone", or "brand voice". Write authentic copy directly.
-5. NO FILENAMES OR DATE STRINGS: Never include file names, date strings (e.g., 31july, Y0853), or raw IDs anywhere in the output.
+PRIMARY SUBJECT & TEXT EXTRACTION RULES:
+1. DOCUMENT & TEXT FIRST: Any visible text, certificates, awards, logos, screens, product labels, documents, or signage are the PRIMARY subject of the image. Read, transcribe key details, and base the caption entirely around what that text/logo actually represents (e.g. vulnerability disclosure recognition, security award, specific product line).
+2. SECONDARY COLOR ONLY: Physical background details (e.g., clothing color, floor patterns, wall textures, furniture) are strictly secondary. Include them ONLY if they genuinely enhance the story — never lead with them or treat them as the main story.
+3. NO GENERIC AI FILLER: Do NOT use stock celebratory phrases or generic AI filler like "proudly presents", "inspiring moment", "significant achievement", "celebrating a stellar achievement", "unwavering dedication", or "future leaders" unless the text explicitly supports it. Write specific, grounded, authentic copy.
 
-Schema Requirements (return ONLY a single valid raw JSON object):
+BRAND VOICE & TONE GUIDANCE:
+- Brand Voice / Tone: ${brandVoice}
+- Emoji Style: ${emojiStyle === 'none' || emojiStyle === 'minimal' ? 'Minimal or no emojis — strictly formal, clean, and premium' : emojiStyle === 'heavy' ? 'Energetic with relevant emojis' : 'Selective, tasteful emojis'}
+${media.workspace.cta ? `- Workspace Target CTA: "${media.workspace.cta}"` : ''}
+
+CALL TO ACTION (suggested_cta) RULES:
+${media.workspace.cta ? `- PRIMARY RULE: Use the workspace CTA "${media.workspace.cta}" directly or adapt it tightly to match the image subject. Do NOT output canned filler like "Explore the impact of our community's work!".` : '- Provide a direct, specific call to action strictly tied to the subject matter in the image. Never output generic canned filler like "Explore the impact of our community\'s work!" or "Join us in congratulating him!".'}
+
+HASHTAG RULES:
+- Generate 3 to 5 highly specific, content-driven hashtags based strictly on what is depicted (e.g. #BugBounty #VulnerabilityDisclosure #NASAPatch).
+- STRICT PROHIBITION: Do NOT include generic filler hashtags like #Achievement, #Recognition, #Innovation, #ProudMoment, #Success, or #Milestone.
+- Do NOT include default workspace hashtags (${(media.workspace.defaultHashtags || []).join(', ')}) — those will be appended automatically.
+
+Schema Requirements (return ONLY a single valid raw JSON object matching this exact Master JSON schema):
 {
-  "product": "Professional title summarizing the image content",
-  "headline": "Punchy Instagram hook summarizing the visual",
-  "description": "Professional 2-3 sentence Instagram caption summarizing the image with 2-3 specific visual details",
+  "product": "Specific title identifying the exact subject/document/product (e.g. NASA Vulnerability Disclosure Recognition)",
+  "headline": "Punchy, specific hook summarizing the actual accomplishment or feature in the brand voice",
+  "description": "2-3 sentence authentic caption grounded in the extracted text/subject and brand voice. Lead with what the document/object is, not background scenery.",
   "keywords": ["keyword1", "keyword2", "keyword3"],
-  "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
-  "mood": "Visual vibe (e.g. professional, inspiring, sleek)",
-  "suggested_cta": "Actionable call to action"
+  "hashtags": ["#SpecificTag1", "#SpecificTag2", "#SpecificTag3"],
+  "mood": "Visual vibe (e.g. authoritative, technical, executive, sleek)",
+  "suggested_cta": "${media.workspace.cta ? media.workspace.cta : 'Specific action matching content'}"
 }`;
 
     if (brandDescription) {
-      systemPrompt += `\n\nWorkspace Brand Context:\n${brandDescription}`;
+      systemPrompt += `\n\nAdditional Brand Context:\n${brandDescription}`;
     }
     if (historicalExamplesText) {
       systemPrompt += `\n${historicalExamplesText}`;
