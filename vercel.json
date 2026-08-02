@@ -41,7 +41,7 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "api/index.js"
+      "dest": "https://zerodaycopsscheduler.onrender.com/api/$1"
     },
     {
       "src": "/assets/(.*)",
