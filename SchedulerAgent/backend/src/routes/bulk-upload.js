@@ -4,14 +4,16 @@ const prisma = require('../prisma');
 const { requireAuth, requireWorkspaceAccess } = require('../middleware/auth');
 const { renderPost } = require('../services/renderer');
 const { generatePresignedUploadUrl, s3Client } = require('../services/r2Storage');
-const { createDateInTimezone } = require('../services/filename-parser');
+const { createDateInTimezone, parseFilenameSchedule } = require('../services/filename-parser');
 
 const router = express.Router();
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 
 /**
- * Helper to compute scheduled date per image based on scheduleConfig
+ * Helper to compute scheduled date per image based on scheduleConfig.
+ * In 'filename-sequence' strategy, tries to parse each filename for an embedded date/time
+ * (e.g., '4aug2225' → Aug 4 at 22:25). Falls back to startDate + offset when filename doesn't parse.
  */
 function computeScheduleForMedia(mediaItems, scheduleConfig, workspaceTimezone = 'Asia/Kolkata') {
   const { strategy = 'sequential-daily', startDate, perDay = 1, timeSlots = ['20:00'] } = scheduleConfig || {};
@@ -22,9 +24,10 @@ function computeScheduleForMedia(mediaItems, scheduleConfig, workspaceTimezone =
   const day = parsedStartDate.getDate();
 
   const slots = timeSlots.length > 0 ? timeSlots : ['20:00'];
+  const defaultSlotTime = slots[0] || '20:00';
   const maxPerDay = Math.max(1, parseInt(perDay, 10) || 1);
 
-  // Clone and sort media items if strategy is filename-sequence
+  // Clone and sort media items
   let items = [...mediaItems];
   if (strategy === 'filename-sequence') {
     items.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
@@ -33,24 +36,37 @@ function computeScheduleForMedia(mediaItems, scheduleConfig, workspaceTimezone =
   }
 
   const results = [];
+  let fallbackIdx = 0; // Tracks offset for items without parseable filename dates
 
   for (let idx = 0; idx < items.length; idx++) {
     const item = items[idx];
-    const dayOffset = Math.floor(idx / maxPerDay);
-    const slotIndex = idx % slots.length;
+    let scheduledDate = null;
 
-    const [hours, minutes] = (slots[slotIndex] || '20:00').split(':').map(Number);
-    
-    // Construct local target date + day offset
-    const targetDate = new Date(year, month, day + dayOffset);
-    const scheduledDate = createDateInTimezone(
-      targetDate.getFullYear(),
-      targetDate.getMonth(),
-      targetDate.getDate(),
-      isNaN(hours) ? 20 : hours,
-      isNaN(minutes) ? 0 : minutes,
-      workspaceTimezone
-    );
+    // In filename-sequence strategy, try to extract date/time from the filename first
+    if (strategy === 'filename-sequence') {
+      const parsed = parseFilenameSchedule(item.filename, defaultSlotTime, workspaceTimezone);
+      if (parsed.isMatch) {
+        scheduledDate = parsed.scheduledDate;
+      }
+    }
+
+    // Fallback: use startDate + offset for sequential-daily OR when filename didn't parse
+    if (!scheduledDate) {
+      const dayOffset = Math.floor(fallbackIdx / maxPerDay);
+      const slotIndex = fallbackIdx % slots.length;
+      const [hours, minutes] = (slots[slotIndex] || '20:00').split(':').map(Number);
+      
+      const targetDate = new Date(year, month, day + dayOffset);
+      scheduledDate = createDateInTimezone(
+        targetDate.getFullYear(),
+        targetDate.getMonth(),
+        targetDate.getDate(),
+        isNaN(hours) ? 20 : hours,
+        isNaN(minutes) ? 0 : minutes,
+        workspaceTimezone
+      );
+      fallbackIdx++;
+    }
 
     results.push({
       mediaId: item.id,

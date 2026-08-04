@@ -45,9 +45,9 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
   const [draggedMediaIndex, setDraggedMediaIndex] = useState<number | null>(null);
 
   // Schedule config state
-  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
   const [strategy, setStrategy] = useState<'sequential-daily' | 'filename-sequence'>('sequential-daily');
-  const [startDate, setStartDate] = useState<string>(tomorrowStr);
+  const [startDate, setStartDate] = useState<string>(todayStr);
   const [perDay, setPerDay] = useState<number>(1);
   const [timeSlots, setTimeSlots] = useState<string[]>([currentWorkspace?.defaultSlotTime || '20:00']);
 
@@ -82,7 +82,13 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
   if (!isOpen) return null;
 
   const handleFileSelect = (files: FileList | File[]) => {
-    const arr = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, 20);
+    const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    const arr = Array.from(files).filter(f => {
+      // Check MIME type first, then fallback to extension (File.type can be empty on some OS/browser combos)
+      if (f.type && f.type.startsWith('image/')) return true;
+      const ext = f.name.toLowerCase().slice(f.name.lastIndexOf('.'));
+      return IMAGE_EXTS.includes(ext);
+    }).slice(0, 20);
     if (arr.length === 0) return;
 
     bulkUploadUrlsMutation.mutate(arr, {
