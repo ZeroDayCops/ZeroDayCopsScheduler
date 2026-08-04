@@ -13,7 +13,7 @@ import { SkeletonList } from './ui/Skeleton';
 import { Toast } from './ui/Toast';
 import {
   CalendarDays, Video, ChevronDown, ChevronUp, Loader2, AlertTriangle,
-  Plus, Sparkles, Link, RefreshCw, Trash2
+  Plus, Sparkles, Link, RefreshCw, Trash2, Check
 } from 'lucide-react';
 
 import { formatInWorkspaceTimezone } from '../lib/date-utils';
@@ -232,6 +232,27 @@ export const PlannerView: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-auto sm:ml-0">
+                      {post.status === 'PENDING_REVIEW' && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={<Check className="w-3.5 h-3.5 text-emerald-400" />}
+                          onClick={async () => {
+                            try {
+                              await fetchApi(`/workspaces/${currentWorkspace.id}/scheduled-posts/${post.id}`, {
+                                method: 'PUT',
+                                body: JSON.stringify({ status: 'PENDING' }),
+                              });
+                              postsQuery.refetch();
+                              setToast({ type: 'success', message: 'Post approved!' });
+                            } catch (err: any) {
+                              setToast({ type: 'error', message: err.message || 'Failed to approve' });
+                            }
+                          }}
+                        >
+                          Approve
+                        </Button>
+                      )}
                       {post.status !== 'PUBLISHED' && <Button variant="primary" size="sm" icon={<Sparkles className="w-3.5 h-3.5" />} onClick={() => setConfirmAction({ type: 'publish', id: post.id })}>Publish Now</Button>}
                       <Button variant="secondary" size="sm" icon={<RefreshCw className="w-3.5 h-3.5" />} onClick={() => setExpandedLogs(p => ({ ...p, [post.id]: !p[post.id] }))} aria-expanded={isExpanded}>
                         Logs {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}

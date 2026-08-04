@@ -11,6 +11,7 @@ const postsRouter = require('./routes/posts');
 const oauthRouter = require('./routes/oauth');
 const notificationsRouter = require('./routes/notifications');
 const analyticsRouter = require('./routes/analytics');
+const bulkUploadRouter = require('./routes/bulk-upload');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -47,6 +48,7 @@ app.use('/api/workspaces/:workspaceId', postsRouter);
 app.use('/api/workspaces/:workspaceId/analytics', analyticsRouter);
 app.use('/api/oauth', oauthRouter);
 app.use('/api/workspaces', notificationsRouter);
+app.use('/api', bulkUploadRouter);
 
 // 404 handler
 app.use((_req, res) => {

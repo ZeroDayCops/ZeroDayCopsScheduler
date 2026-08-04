@@ -403,6 +403,11 @@ Schema Requirements (return ONLY a single valid raw JSON object matching this ex
 
     console.log(`[AI ENGINE] Media ${mediaId} analyzed & updated successfully!`);
 
+    // Check if parent batch is now fully processed
+    if (media.batchId) {
+      await checkBatchCompletion(media.batchId);
+    }
+
     // Trigger automation (Auto-Schedule / Auto-Publish)
     handlePostAnalysisAutomation(mediaId).catch((err) => {
       console.error(`[AUTOMATION] Error after analysis for media ${mediaId}:`, err);
@@ -410,7 +415,7 @@ Schema Requirements (return ONLY a single valid raw JSON object matching this ex
 
   } catch (err) {
     console.error(`[AI ENGINE] Analysis failed for media ${mediaId}:`, err.message);
-    await prisma.media.update({
+    const failedMedia = await prisma.media.update({
       where: { id: mediaId },
       data: {
         status: 'FAILED',
@@ -418,6 +423,10 @@ Schema Requirements (return ONLY a single valid raw JSON object matching this ex
         aiMasterJson: { error: err.message || 'Unknown analysis error' },
       },
     });
+
+    if (failedMedia.batchId) {
+      await checkBatchCompletion(failedMedia.batchId);
+    }
   } finally {
     // Cleanup temporary files
     if (tempFramePath && fs.existsSync(tempFramePath)) {
@@ -432,4 +441,30 @@ Schema Requirements (return ONLY a single valid raw JSON object matching this ex
   }
 }
 
-module.exports = { analyzeMedia };
+/**
+ * Checks if all media in a batch have reached a terminal status (ANALYZED or FAILED).
+ * If so, updates UploadBatch.status to READY.
+ */
+async function checkBatchCompletion(batchId) {
+  try {
+    const batchMedia = await prisma.media.findMany({
+      where: { batchId },
+      select: { status: true },
+    });
+
+    if (batchMedia.length === 0) return;
+
+    const allDone = batchMedia.every(m => m.status === 'ANALYZED' || m.status === 'FAILED');
+    if (allDone) {
+      await prisma.uploadBatch.update({
+        where: { id: batchId },
+        data: { status: 'READY' },
+      });
+      console.log(`[AI ENGINE] All ${batchMedia.length} media items in batch ${batchId} are complete. Updated batch status -> READY.`);
+    }
+  } catch (err) {
+    console.error(`[AI ENGINE] Error checking completion for batch ${batchId}:`, err.message);
+  }
+}
+
+module.exports = { analyzeMedia, checkBatchCompletion };

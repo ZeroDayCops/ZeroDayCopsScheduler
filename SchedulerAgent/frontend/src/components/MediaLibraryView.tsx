@@ -35,6 +35,8 @@ const MediaStatusBadge: React.FC<{ media: MediaItem }> = ({ media }) => {
 };
 
 import { parseFilenameScheduleFrontend, formatInWorkspaceTimezone } from '../lib/date-utils';
+import { BulkUploadModal } from './BulkUploadModal';
+import { Layers } from 'lucide-react';
 
 export const MediaLibraryView: React.FC = () => {
   const { currentWorkspace } = useApp();
@@ -44,6 +46,7 @@ export const MediaLibraryView: React.FC = () => {
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaList = data?.media || [];
 
@@ -69,9 +72,18 @@ export const MediaLibraryView: React.FC = () => {
   return (
     <div className="flex h-full gap-8 relative pb-12 animate-fade-in">
       <div className="flex-1 space-y-8 min-w-0">
-        <div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">Media Library</h1>
-          <p className="text-slate-400 text-sm mt-1">Upload brand photos or videos to trigger Gemini AI analysis.</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-extrabold text-white tracking-tight">Media Library</h1>
+            <p className="text-slate-400 text-sm mt-1">Upload brand photos or videos to trigger Gemini AI analysis.</p>
+          </div>
+          <Button
+            variant="primary"
+            icon={<Layers className="w-4 h-4" />}
+            onClick={() => setIsBulkModalOpen(true)}
+          >
+            Bulk Upload Images
+          </Button>
         </div>
 
         {/* Drop zone */}
@@ -200,6 +212,8 @@ export const MediaLibraryView: React.FC = () => {
         confirmLabel="Delete Forever" variant="danger" isLoading={deleteMutation.isPending}
         onConfirm={async () => { if (deleteTarget) { await deleteMutation.mutateAsync(deleteTarget); setSelectedMedia(null); setDeleteTarget(null); } }}
         onClose={() => setDeleteTarget(null)} />
+
+      <BulkUploadModal isOpen={isBulkModalOpen} onClose={() => setIsBulkModalOpen(false)} />
     </div>
   );
 };

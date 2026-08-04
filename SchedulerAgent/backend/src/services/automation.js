@@ -24,6 +24,12 @@ async function handlePostAnalysisAutomation(mediaId) {
       return;
     }
 
+    // Skip automation for batch media (scheduling decisions handled by bulk commit endpoint)
+    if (media.batchId) {
+      console.log(`[AUTOMATION] Media ${mediaId} belongs to batch ${media.batchId}. Skipping single-image automation hook.`);
+      return;
+    }
+
     const workspace = media.workspace;
     const mode = workspace.automationMode;
 

@@ -75,6 +75,7 @@ model User {
   createdAt       DateTime          @default(now())
   memberships     Membership[]
   workspaceAccess WorkspaceAccess[]
+  uploadBatches   UploadBatch[]
 }
 
 // ─── Membership (User ↔ Organization with role) ─────────────────
@@ -114,6 +115,7 @@ model Workspace {
   templates               Template[]
   scheduledPosts          ScheduledPost[]
   notifications           Notification[]
+  uploadBatches           UploadBatch[]
 }
 
 // ─── WorkspaceAccess (grants a user access to a workspace) ──────
@@ -163,11 +165,15 @@ model Media {
   statusDetail String?
   aiMasterJson Json?
   aiDegraded   Boolean     @default(false)
+  batchId      String?
+  sequenceIndex Int?
   createdAt    DateTime    @default(now())
   workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  batch        UploadBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
   scheduledPosts ScheduledPost[]
 
   @@index([workspaceId, status])
+  @@index([batchId])
 }
 
 // ─── Template (post styling templates) ───────────────────────────
@@ -186,9 +192,34 @@ model Template {
 
 enum PostStatus {
   PENDING
+  PENDING_REVIEW
   PROCESSING
   PUBLISHED
   FAILED
+}
+
+enum UploadBatchStatus {
+  UPLOADING
+  ANALYZING
+  READY
+  COMMITTED
+  PARTIALLY_FAILED
+}
+
+model UploadBatch {
+  id                  String            @id @default(uuid())
+  workspaceId         String
+  createdByUserId     String
+  status              UploadBatchStatus @default(UPLOADING)
+  scheduleConfig      Json?
+  publishModeOverride AutomationMode?
+  createdAt           DateTime          @default(now())
+  workspace           Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy           User              @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  media               Media[]
+  scheduledPosts      ScheduledPost[]
+
+  @@index([workspaceId, createdAt])
 }
 
 model ScheduledPost {
@@ -204,13 +235,16 @@ model ScheduledPost {
   publishedAt     DateTime?
   externalPostId  String?
   retryCount      Int            @default(0)
+  batchId         String?
   workspace       Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   media           Media          @relation(fields: [mediaId], references: [id], onDelete: Cascade)
   socialAccount   SocialAccount  @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  batch           UploadBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
   postLogs        PostLog[]
 
   @@index([workspaceId, scheduledFor])
   @@index([status])
+  @@index([batchId])
 }
 
 // ─── PostLog (history of publishing attempts) ────────────────────

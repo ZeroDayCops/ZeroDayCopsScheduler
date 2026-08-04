@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Clock, Loader2, Sparkles } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Clock, Loader2, Sparkles, Eye } from 'lucide-react';
 
 export type BadgeType =
   // Social Account Statuses
@@ -58,6 +58,12 @@ export const Badge: React.FC<BadgeProps> = ({ type, label, className = '' }) => 
           bg: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
           icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
           defaultLabel: 'Processing',
+        };
+      case 'PENDING_REVIEW':
+        return {
+          bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+          icon: <Eye className="w-3.5 h-3.5" />,
+          defaultLabel: 'Needs Review',
         };
       case 'PENDING':
         return {
