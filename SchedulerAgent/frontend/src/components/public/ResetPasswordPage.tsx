@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../../lib/api';
-import { Shield, Lock, KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Lock, KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 
