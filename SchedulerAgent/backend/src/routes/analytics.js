@@ -148,12 +148,17 @@ router.get('/', requireAuth, requireWorkspaceAccess, async (req, res) => {
     const healthReasons = [];
 
     // Check account connection status
+    const connectedAccounts = workspace.socialAccounts.filter(sa => sa.status === 'CONNECTED');
+    
     for (const sa of workspace.socialAccounts) {
       if (sa.status === 'EXPIRED') {
-        healthReasons.push(`Social account connection for ${sa.platform} has EXPIRED.`);
-      } else if (sa.status === 'NOT_CONNECTED' && workspace.automationMode !== 'MANUAL') {
-        healthReasons.push(`${sa.platform} account is NOT_CONNECTED while automation is ${workspace.automationMode}.`);
+        healthReasons.push(`Social account connection for ${sa.platform} has EXPIRED and needs re-authentication.`);
       }
+    }
+
+    // Only flag NOT_CONNECTED if ALL accounts are disconnected while automation is active
+    if (connectedAccounts.length === 0 && workspace.socialAccounts.length > 0 && workspace.automationMode !== 'MANUAL') {
+      healthReasons.push(`No social accounts are CONNECTED while automation mode is set to ${workspace.automationMode}.`);
     }
 
     // Check recent 7-day publish failure rate
