@@ -29,9 +29,9 @@ interface MockWorkspace {
 const mockWorkspaces: MockWorkspace[] = [
   {
     id: 'ws-1',
-    name: 'Mahavir NX',
+    name: 'Aura Luxe',
     category: 'Ethnic Wear & Bridal',
-    avatar: 'MN',
+    avatar: 'AL',
     activeCount: 42,
     successRate: '99.4%',
     lastPublish: '12m ago',
@@ -39,9 +39,9 @@ const mockWorkspaces: MockWorkspace[] = [
   },
   {
     id: 'ws-2',
-    name: 'Jamai Raja',
+    name: 'Verve Couture',
     category: 'Men\'s Couture',
-    avatar: 'JR',
+    avatar: 'VC',
     activeCount: 28,
     successRate: '98.9%',
     lastPublish: '27m ago',
@@ -49,9 +49,9 @@ const mockWorkspaces: MockWorkspace[] = [
   },
   {
     id: 'ws-3',
-    name: 'Trends of India',
+    name: 'UrbanPulse',
     category: 'Fast Fashion Retail',
-    avatar: 'TI',
+    avatar: 'UP',
     activeCount: 89,
     successRate: '100%',
     lastPublish: '1h ago',
@@ -72,7 +72,7 @@ const mockWorkspaces: MockWorkspace[] = [
 const mockPosts = [
   {
     id: 'post-101',
-    brand: 'Mahavir NX',
+    brand: 'Aura Luxe',
     title: 'Festive Silk Sherwani Collection 2026',
     platform: 'Pinterest',
     platformColor: 'bg-red-500/10 text-red-400 border-red-500/20',
@@ -83,7 +83,7 @@ const mockPosts = [
   },
   {
     id: 'post-102',
-    brand: 'Trends of India',
+    brand: 'UrbanPulse',
     title: 'Autumn Velvet Kurta Set — Drop 03',
     platform: 'LinkedIn',
     platformColor: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -94,7 +94,7 @@ const mockPosts = [
   },
   {
     id: 'post-103',
-    brand: 'Jamai Raja',
+    brand: 'Verve Couture',
     title: 'Behind The Scenes: Royal Heritage Stitching',
     platform: 'YouTube',
     platformColor: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
@@ -275,7 +275,7 @@ export const HeroPreviewCanvas: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-white/5">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-indigo-400" />
-                Multi-Platform Schedule Matrix (Monsoon & Festive Drop)
+                Multi-Platform Schedule Matrix (Autumn Festive Drop)
               </h3>
               <span className="text-xs text-slate-400">Timezone: Asia/Kolkata (IST)</span>
             </div>
@@ -286,12 +286,12 @@ export const HeroPreviewCanvas: React.FC = () => {
                   <div className="space-y-1.5 text-left">
                     <div className="p-2 rounded bg-indigo-500/10 border border-indigo-500/20">
                       <span className="text-[10px] font-bold text-indigo-300 block">10:00 AM · LinkedIn</span>
-                      <span className="text-[10px] text-slate-400 truncate block">Mahavir Silk Reel</span>
+                      <span className="text-[10px] text-slate-400 truncate block">Aura Silk Reel</span>
                     </div>
                     {idx % 2 === 0 && (
                       <div className="p-2 rounded bg-red-500/10 border border-red-500/20">
                         <span className="text-[10px] font-bold text-red-300 block">4:30 PM · Pinterest</span>
-                        <span className="text-[10px] text-slate-400 truncate block">Trends India Moodboard</span>
+                        <span className="text-[10px] text-slate-400 truncate block">UrbanPulse Moodboard</span>
                       </div>
                     )}
                   </div>
@@ -316,7 +316,7 @@ export const HeroPreviewCanvas: React.FC = () => {
                   </span>
                 </h4>
                 <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                  Asset detected: <code className="text-indigo-300 font-mono">Mahavir_Bridal_Lehenga_Red_04.png</code>
+                  Asset detected: <code className="text-indigo-300 font-mono">AuraLuxe_Bridal_Lehenga_Red_04.png</code>
                 </p>
                 <div className="flex flex-wrap gap-2 mt-3">
                   <span className="text-[11px] bg-slate-900 border border-white/10 px-2.5 py-1 rounded-lg text-slate-300">
@@ -333,7 +333,7 @@ export const HeroPreviewCanvas: React.FC = () => {
             </div>
             <div className="p-3 rounded-lg border border-white/5 bg-[#070b14] text-xs font-mono text-slate-400">
               <p className="text-indigo-400 font-bold mb-1">// Generated Platform-Native Caption:</p>
-              <p>"Unveiling royal craftsmanship: The Heritage Crimson Bridal Lehenga by Mahavir NX. Hand-embroidered zari threads woven over 180 hours of precision..."</p>
+              <p>"Unveiling royal craftsmanship: The Heritage Crimson Bridal Lehenga by Aura Luxe. Hand-embroidered zari threads woven over 180 hours of precision..."</p>
             </div>
           </div>
         )}
@@ -368,7 +368,7 @@ export const HeroPreviewCanvas: React.FC = () => {
               <div className="p-2.5 rounded bg-[#070b14] border border-white/5 flex items-center justify-between text-slate-300">
                 <span className="flex items-center gap-2">
                   <FileCheck className="w-3.5 h-3.5 text-amber-400" />
-                  [14:29:40] Watch Folder Ingest: 4 new media assets validated for Jamai Raja
+                  [14:29:40] Watch Folder Ingest: 4 new media assets validated for Verve Couture
                 </span>
                 <span className="text-slate-500">Just now</span>
               </div>

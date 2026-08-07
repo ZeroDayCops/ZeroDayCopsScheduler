@@ -39,8 +39,8 @@ const workflowSteps = [
     icon: Sliders,
     color: 'from-purple-500 to-pink-600',
     description: 'Merges AI copy with workspace-level guidelines, CTA preferences, and client hashtag vaults.',
-    detailTitle: 'Applied Ruleset: Mahavir NX Luxury',
-    detailBox: 'Enforced formal tone, appended #MahavirBridal #Sherwani2026, excluded forbidden terms.',
+    detailTitle: 'Applied Ruleset: Aura Luxe',
+    detailBox: 'Enforced formal luxury tone, appended #AuraLuxe #Sherwani2026, excluded forbidden terms.',
   },
   {
     step: '04',
@@ -168,7 +168,7 @@ export const WorkflowPipeline: React.FC = () => {
               <div className="p-3 rounded-lg bg-[#0b101c] border border-white/5 text-xs space-y-2">
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Target Brand</span>
-                  <span className="font-bold text-slate-200">Mahavir NX (Workspace)</span>
+                  <span className="font-bold text-slate-200">Aura Luxe (Workspace)</span>
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Platforms Sync</span>

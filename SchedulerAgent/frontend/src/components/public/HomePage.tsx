@@ -24,9 +24,9 @@ const realMetrics = [
 ];
 
 const liveTickerLogs = [
-  { brand: 'Mahavir NX', action: 'Pinterest pin published', time: '12m ago', iconColor: 'text-red-400' },
-  { brand: 'Trends of India', action: 'LinkedIn Article live', time: '27m ago', iconColor: 'text-blue-400' },
-  { brand: 'Jamai Raja', action: 'YouTube Short queued for 6:30 PM', time: '41m ago', iconColor: 'text-rose-400' },
+  { brand: 'Aura Luxe', action: 'Pinterest pin published', time: '12m ago', iconColor: 'text-red-400' },
+  { brand: 'UrbanPulse', action: 'LinkedIn Article live', time: '27m ago', iconColor: 'text-blue-400' },
+  { brand: 'Verve Couture', action: 'YouTube Short queued for 6:30 PM', time: '41m ago', iconColor: 'text-rose-400' },
   { brand: 'ZeroDayCops', action: 'AI Vision processed 8 media files', time: '1h ago', iconColor: 'text-purple-400' },
 ];
 
