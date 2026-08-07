@@ -234,10 +234,6 @@ async function publishToPinterest(post, decryptedToken, media) {
     if (media.mediaType === 'VIDEO') {
       let coverFramePath = null;
       try {
-        console.log(`[PINTEREST] Generating mandatory cover frame from video...`);
-        coverFramePath = await extractPinterestVideoFrame(media.filepath);
-        const coverSource = await preparePinterestMediaSource(coverFramePath, true);
-
         console.log(`[PINTEREST] Step 1: Registering media upload via POST /v5/media...`);
         const mediaRegRes = await axios.post(
           `${pinterestApiBase}/v5/media`,
@@ -270,22 +266,31 @@ async function publishToPinterest(post, decryptedToken, media) {
             maxContentLength: Infinity,
           });
 
-          console.log(`[PINTEREST] Step 3: Polling media processing status for media_id ${media_id}...`);
+          // Exponential backoff polling: 2s, 4s, 6s, 8s, 10s, 10s, 10s... up to ~300s total
+          console.log(`[PINTEREST] Step 3: Polling media processing status for media_id ${media_id} (max 300s with backoff)...`);
           let status = 'registered';
-          const maxAttempts = 30; // 60s max timeout (30 x 2s)
-          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            await new Promise((r) => setTimeout(r, 2000));
+          const maxWaitMs = 300_000; // 5 minutes max
+          let elapsedMs = 0;
+          let attempt = 0;
+          while (elapsedMs < maxWaitMs) {
+            attempt++;
+            const delayMs = Math.min(attempt * 2000, 10_000); // 2s, 4s, 6s, 8s, 10s cap
+            await new Promise((r) => setTimeout(r, delayMs));
+            elapsedMs += delayMs;
+
             const checkRes = await axios.get(`${pinterestApiBase}/v5/media/${media_id}`, {
               headers: { Authorization: `Bearer ${decryptedToken}` },
             });
             status = checkRes.data.status;
-            console.log(`[PINTEREST MEDIA POLL ${attempt}/${maxAttempts}]: status = ${status}`);
-            if (status === 'succeeded' || status === 'registered') break;
+            console.log(`[PINTEREST MEDIA POLL ${attempt}] ${(elapsedMs / 1000).toFixed(0)}s elapsed: status = ${status}`);
+
+            if (status === 'succeeded') break;
             if (status === 'failed') throw new Error('Pinterest video processing failed on server');
+            // 'registered' and 'processing' — keep polling
           }
 
-          if (status === 'succeeded' || status === 'registered') {
-            console.log(`[PINTEREST] Step 4: Creating Video Pin with mandatory cover image...`);
+          if (status === 'succeeded') {
+            console.log(`[PINTEREST] Step 4: Creating Video Pin (Pinterest auto-generates cover from key frame)...`);
             const pinResponse = await axios.post(
               `${pinterestApiBase}/v5/pins`,
               {
@@ -296,8 +301,6 @@ async function publishToPinterest(post, decryptedToken, media) {
                   source_type: 'video_id',
                   media_id,
                   cover_image_key_frame_time: 2,
-                  cover_image_data: coverSource.data,
-                  cover_image_content_type: coverSource.content_type,
                 },
               },
               {
@@ -313,7 +316,7 @@ async function publishToPinterest(post, decryptedToken, media) {
               externalPostId: pinResponse.data.id,
             };
           } else {
-            throw new Error(`Pinterest video processing timed out after 60 seconds (status: ${status})`);
+            throw new Error(`Pinterest video processing timed out after ${Math.round(elapsedMs / 1000)}s (status: ${status})`);
           }
         } else {
           throw new Error('Invalid /v5/media registration response');
@@ -334,11 +337,9 @@ async function publishToPinterest(post, decryptedToken, media) {
           };
         }
 
-        // Opt-in Fallback Path: Publish static image pin derived from video frame
-        console.log(`[PINTEREST] Workspace allows fallback. Publishing video as static image pin...`);
-        if (!coverFramePath) {
-          coverFramePath = await extractPinterestVideoFrame(media.filepath);
-        }
+        // Opt-in Fallback Path: Extract a video frame via ffmpeg and publish as static image pin
+        console.log(`[PINTEREST] Workspace allows fallback. Extracting frame and publishing as static image pin...`);
+        coverFramePath = await extractPinterestVideoFrame(media.filepath);
         const fallbackSource = await preparePinterestMediaSource(coverFramePath, true);
 
         const pinResponse = await axios.post(
