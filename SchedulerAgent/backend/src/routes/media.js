@@ -129,12 +129,13 @@ function getAbsoluteFilePath(mediaFilepath) {
   return path.join(baseUploads, mediaFilepath.replace(/^uploads[\/\\]?/, ''));
 }
 
+const storageProvider = require('../services/storageProvider');
+
 /**
  * GET /api/media/:id/file
- * Streams the raw uploaded media file or redirects to Cloudflare R2.
+ * Streams raw uploaded media file via storageProvider.
  */
 router.get('/:id/file', requireAuth, async (req, res) => {
-  const fs = require('fs');
   try {
     const media = await prisma.media.findUnique({
       where: { id: req.params.id },
@@ -159,36 +160,33 @@ router.get('/:id/file', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    // If R2 URL is available, redirect directly to Cloudflare R2!
-    if (media.r2Url) {
-      return res.redirect(media.r2Url);
-    }
+    const keyOrPath = media.r2Key || media.filepath;
+    const meta = await storageProvider.headObject(keyOrPath);
+    const readStream = await storageProvider.getReadStream(keyOrPath);
 
-    const absolutePath = getAbsoluteFilePath(media.filepath);
-    if (!fs.existsSync(absolutePath)) {
-      return res.status(404).json({ error: 'Physical media file missing' });
-    }
-
-    res.sendFile(absolutePath);
+    res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
+    res.setHeader('Content-Length', meta.contentLength);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    readStream.pipe(res);
   } catch (err) {
-    console.error('Fetch file error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Fetch media file error:', err.message);
+    res.status(404).json({ error: 'Media asset file missing from storage' });
   }
 });
 
 
 /**
  * GET /api/media/:id/thumbnail
- * Resizes the image to 300px width using sharp and streams it.
- * Videos or failed images fall back to standard raw file or mock icon.
+ * Resizes image to 300px width using sharp via storageProvider and streams WebP.
+ * Caches generated thumbnail locally for instant repeat requests.
  */
 router.get('/:id/thumbnail', requireAuth, async (req, res) => {
   const fs = require('fs');
   const path = require('path');
+  const os = require('os');
   const sharp = require('sharp');
-  let media = null;
   try {
-    media = await prisma.media.findUnique({
+    const media = await prisma.media.findUnique({
       where: { id: req.params.id },
       include: { workspace: true },
     });
@@ -211,16 +209,7 @@ router.get('/:id/thumbnail', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    const absolutePath = getAbsoluteFilePath(media.filepath);
-    if (!fs.existsSync(absolutePath)) {
-      if (media.r2Url) {
-        return res.redirect(media.r2Url);
-      }
-      return res.status(404).json({ error: 'Physical media file missing' });
-    }
-
     if (media.mediaType === 'VIDEO') {
-      // Return a tiny 1x1 transparent PNG placeholder for video thumbnails
       const placeholder = Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPj/HwADBwIAMCbHYQAAAABJRU5ErkJggg==',
         'base64'
@@ -230,55 +219,44 @@ router.get('/:id/thumbnail', requireAuth, async (req, res) => {
       return res.send(placeholder);
     }
 
-    // Disk cache path: uploads/{wsId}/thumbs/{mediaId}_300.webp
-    const thumbsDir = path.join(path.dirname(absolutePath), 'thumbs');
-    const thumbPath = path.join(thumbsDir, `${media.id}_300.webp`);
+    // Disk cache path
+    const cacheDir = path.join(os.tmpdir(), 'thumbs');
+    const cachePath = path.join(cacheDir, `${media.id}_300.webp`);
 
-    // Serve from cache if it exists
-    if (fs.existsSync(thumbPath)) {
+    if (fs.existsSync(cachePath)) {
       res.setHeader('Content-Type', 'image/webp');
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      return res.sendFile(thumbPath);
+      return res.sendFile(cachePath);
     }
 
-    // Generate, cache, and serve
-    if (!fs.existsSync(thumbsDir)) {
-      fs.mkdirSync(thumbsDir, { recursive: true });
+    // Obtain read stream via storageProvider
+    const keyOrPath = media.r2Key || media.filepath;
+    const stream = await storageProvider.getReadStream(keyOrPath);
+
+    const chunks = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true });
     }
 
-    await sharp(absolutePath)
+    await sharp(buffer)
       .resize(300)
       .webp({ quality: 80 })
-      .toFile(thumbPath);
+      .toFile(cachePath);
 
     res.setHeader('Content-Type', 'image/webp');
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.sendFile(thumbPath);
+    res.sendFile(cachePath);
   } catch (err) {
-    console.error('Fetch thumbnail error, sending original file:', err.message);
-    try {
-      if (media) {
-        const absolutePath = getAbsoluteFilePath(media.filepath);
-        if (fs.existsSync(absolutePath)) {
-          const fileBuffer = fs.readFileSync(absolutePath);
-          const ext = path.extname(media.filename).toLowerCase();
-          const mimeMap = {
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.png': 'image/png',
-            '.webp': 'image/webp',
-            '.gif': 'image/gif',
-          };
-          res.setHeader('Content-Type', mimeMap[ext] || 'image/jpeg');
-          return res.send(fileBuffer);
-        }
-      }
-    } catch (fsErr) {
-      console.error('Sync file send failed:', fsErr.message);
-    }
-    res.status(500).json({ error: 'Internal server error' });
+    console.error(`[THUMBNAIL ENGINE ERROR] Failed for media ${req.params.id}:`, err.message);
+    res.status(404).json({ error: 'Thumbnail generation failed; media missing from storage' });
   }
 });
+
 
 /**
  * DELETE /api/media/:id

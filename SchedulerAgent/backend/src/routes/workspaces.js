@@ -461,9 +461,11 @@ router.post('/:id/media/upload-url', requireAuth, requireWorkspaceAccess, async 
   }
 });
 
+const storageProvider = require('../services/storageProvider');
+
 /**
  * POST /api/workspaces/:id/media/:mediaId/complete-r2
- * Signals that direct R2 upload has completed and triggers AI analysis.
+ * Signals that direct R2 upload has completed, verifies storage integrity, and triggers AI analysis.
  */
 router.post('/:id/media/:mediaId/complete-r2', requireAuth, requireWorkspaceAccess, async (req, res) => {
   try {
@@ -473,7 +475,22 @@ router.post('/:id/media/:mediaId/complete-r2', requireAuth, requireWorkspaceAcce
       return res.status(404).json({ error: 'Media asset not found' });
     }
 
-    console.log(`R2 upload completed for media ${media.id} (${media.filename}). Triggering instant Vision analysis async.`);
+    // Verify storage presence before proceeding
+    const isStored = await storageProvider.exists(media.r2Key || media.filepath);
+    if (!isStored) {
+      console.warn(`[COMPLETE R2 WARNING]: Verification failed for media ${media.id} (${media.filename}). Key ${media.r2Key} not found in R2 bucket.`);
+      const updatedFailed = await prisma.media.update({
+        where: { id: mediaId },
+        data: {
+          status: 'FAILED',
+          statusDetail: 'Storage verification failed: Object missing from storage bucket.',
+          aiMasterJson: { error: 'Direct upload to R2 failed or was blocked by browser CORS policy.' },
+        },
+      });
+      return res.status(400).json({ error: 'Storage verification failed: file object not found in storage bucket.', media: updatedFailed });
+    }
+
+    console.log(`R2 storage verified for media ${media.id} (${media.filename}). Triggering Vision analysis async.`);
     analyzeMedia(media.id).catch((err) => console.error(`[VISION ANALYSIS ERROR]:`, err.message));
     res.json({ success: true, media });
   } catch (err) {
@@ -481,6 +498,56 @@ router.post('/:id/media/:mediaId/complete-r2', requireAuth, requireWorkspaceAcce
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+/**
+ * POST /api/workspaces/:id/media/:mediaId/upload-proxy
+ * Backend proxy upload fallback route used when browser direct PUT to R2 fails (e.g. CORS/network error).
+ */
+router.post('/:id/media/:mediaId/upload-proxy', requireAuth, requireWorkspaceAccess, upload.single('file'), async (req, res) => {
+  try {
+    const { mediaId, id: workspaceId } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file provided in proxy upload' });
+    }
+
+    const media = await prisma.media.findUnique({ where: { id: mediaId } });
+    if (!media) {
+      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      return res.status(404).json({ error: 'Media asset record not found' });
+    }
+
+    let r2Details = { publicUrl: media.r2Url, key: media.r2Key };
+    if (s3Client) {
+      try {
+        const destinationKey = media.r2Key || `${workspaceId}/proxy-${Date.now()}-${req.file.originalname}`;
+        r2Details = await storageProvider.uploadToR2(req.file.path, destinationKey, req.file.mimetype || 'image/jpeg');
+      } catch (r2Err) {
+        console.warn(`[UPLOAD PROXY R2 WARNING]: ${r2Err.message}`);
+      }
+    }
+
+    const updatedMedia = await prisma.media.update({
+      where: { id: mediaId },
+      data: {
+        filepath: req.file.path,
+        r2Url: r2Details.publicUrl || media.r2Url,
+        r2Key: r2Details.key || media.r2Key,
+        status: 'NEW',
+        statusDetail: 'Uploaded via server proxy fallback. Starting AI analysis...',
+      },
+    });
+
+    console.log(`[UPLOAD PROXY SUCCESS]: File uploaded via server proxy for media ${mediaId}. Triggering Vision analysis.`);
+    analyzeMedia(mediaId).catch((err) => console.error(`[VISION ANALYSIS ERROR]:`, err.message));
+
+    res.json({ success: true, media: updatedMedia });
+  } catch (err) {
+    console.error('Upload proxy fallback error:', err);
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    res.status(500).json({ error: 'Internal server error during upload proxy fallback' });
+  }
+});
+
 
 /**
  * POST /api/workspaces/:id/media

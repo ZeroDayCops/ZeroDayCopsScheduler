@@ -147,23 +147,20 @@ async function analyzeMedia(mediaId) {
       data: { status: 'ANALYZING', statusDetail: 'Preparing asset for analysis...' },
     });
 
-    let localPath = media.filepath;
+    const storageProvider = require('./storageProvider');
+    const ext = path.extname(media.filename) || (media.mediaType === 'VIDEO' ? '.mp4' : '.jpg');
+    tempR2DownloadedPath = path.join(os.tmpdir(), `ai-analysis-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
 
-    if (!fs.existsSync(localPath) && media.r2Key) {
-      console.log(`[AI ENGINE] Local asset missing at ${localPath}, downloading from R2 (${media.r2Key})...`);
-      const ext = path.extname(media.filename) || (media.mediaType === 'VIDEO' ? '.mp4' : '.jpg');
-      tempR2DownloadedPath = path.join(os.tmpdir(), `r2-analysis-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
-      try {
-        await downloadFromR2(media.r2Key, tempR2DownloadedPath);
-        localPath = tempR2DownloadedPath;
-        console.log(`[AI ENGINE] Downloaded R2 asset to ${tempR2DownloadedPath}`);
-      } catch (r2DlErr) {
-        console.warn(`[AI ENGINE] R2 download failed for analysis:`, r2DlErr.message);
-      }
+    try {
+      await storageProvider.downloadFile(media.r2Key || media.filepath, tempR2DownloadedPath);
+    } catch (dlErr) {
+      console.warn(`[AI ENGINE] Storage fetch failed for media ${mediaId}:`, dlErr.message);
     }
 
+    let localPath = fs.existsSync(tempR2DownloadedPath) ? tempR2DownloadedPath : storageProvider.resolveLocalPath(media.filepath);
+
     if (media.mediaType === 'VIDEO') {
-      if (fs.existsSync(localPath)) {
+      if (localPath && fs.existsSync(localPath)) {
         await prisma.media.update({
           where: { id: mediaId },
           data: { statusDetail: 'Trimming video & extracting frame...' },
@@ -174,14 +171,20 @@ async function analyzeMedia(mediaId) {
           tempFramePath = await extractVideoFrame(tempTrimmedPath);
           imageToAnalyze = tempFramePath;
         } catch (ffmpegErr) {
-          console.warn('[AI ENGINE] FFmpeg processing failed, proceeding without frame:', ffmpegErr.message);
+          console.warn('[AI ENGINE] FFmpeg frame extraction failed:', ffmpegErr.message);
         }
       }
     } else {
-      if (fs.existsSync(localPath)) {
+      if (localPath && fs.existsSync(localPath)) {
         imageToAnalyze = localPath;
       }
     }
+
+    // STRICT VALIDATION: Abort analysis if physical image/video buffer is unreadable
+    if (!imageToAnalyze || !fs.existsSync(imageToAnalyze) || fs.statSync(imageToAnalyze).size === 0) {
+      throw new Error(`Media asset file is missing or unreadable in storage. Key/Path: ${media.r2Key || media.filepath}`);
+    }
+
 
     const brandVoice = media.workspace.brandVoice || 'Bold & Precise';
     const emojiStyle = media.workspace.emojiStyle || 'moderate';

@@ -73,9 +73,11 @@ export function useBulkUploadUrls() {
         body: JSON.stringify({ files: payloadFiles }),
       });
 
-      // 2. Upload files directly to R2 in parallel
+      // 2. Upload files in parallel with automatic backend proxy fallback
       const uploadPromises = res.uploads.map(async (u, idx) => {
         const fileObj = files[idx];
+        let directSuccess = false;
+
         if (u.uploadUrl) {
           try {
             const putRes = await fetch(u.uploadUrl, {
@@ -83,17 +85,31 @@ export function useBulkUploadUrls() {
               headers: { 'Content-Type': fileObj.type || 'image/jpeg' },
               body: fileObj,
             });
-            if (!putRes.ok) {
-              console.warn(`[R2 DIRECT PUT WARNING] Upload failed for ${fileObj.name}: ${putRes.status}`);
+            if (putRes.ok) {
+              directSuccess = true;
+            } else {
+              console.warn(`[R2 DIRECT PUT WARNING] HTTP ${putRes.status} for ${fileObj.name}`);
             }
           } catch (r2Err) {
-            console.warn(`[R2 DIRECT PUT ERROR] Upload error for ${fileObj.name}:`, r2Err);
+            console.warn(`[R2 DIRECT PUT ERROR] Direct upload failed for ${fileObj.name}:`, r2Err);
           }
         }
 
-        // Signal complete-r2 to trigger AI analysis
-        return fetchApi(`/workspaces/${wsId}/media/${u.mediaId}/complete-r2`, {
+        if (directSuccess) {
+          // Complete direct R2 upload
+          return fetchApi(`/workspaces/${wsId}/media/${u.mediaId}/complete-r2`, {
+            method: 'POST',
+          });
+        }
+
+        // Fallback: upload file directly to backend proxy endpoint
+        console.log(`[UPLOAD FALLBACK] Uploading ${fileObj.name} via server proxy...`);
+        const formData = new FormData();
+        formData.append('file', fileObj);
+
+        return fetchApi(`/workspaces/${wsId}/media/${u.mediaId}/upload-proxy`, {
           method: 'POST',
+          body: formData,
         });
       });
 
