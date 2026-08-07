@@ -72,6 +72,8 @@ model User {
   passwordHash    String
   name            String
   notificationPrefs Json?           // { muteSuccess, muteScheduled, alertFailure }
+  resetToken      String?
+  resetTokenExpiry DateTime?
   createdAt       DateTime          @default(now())
   memberships     Membership[]
   workspaceAccess WorkspaceAccess[]

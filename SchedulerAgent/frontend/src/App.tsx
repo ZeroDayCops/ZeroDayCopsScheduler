@@ -15,6 +15,8 @@ import { PrivacyPage } from './components/public/PrivacyPage';
 import { NotFoundPage } from './components/public/NotFoundPage';
 import { LoginPage } from './components/public/LoginPage';
 import { RegisterPage } from './components/public/RegisterPage';
+import { ForgotPasswordPage } from './components/public/ForgotPasswordPage';
+import { ResetPasswordPage } from './components/public/ResetPasswordPage';
 
 /**
  * Protected route wrapper — redirects to /login if not authenticated.
@@ -113,6 +115,14 @@ const AppContent: React.FC = () => {
         <Route
           path="/register"
           element={<GuestOnly><RegisterPage /></GuestOnly>}
+        />
+        <Route
+          path="/forgot-password"
+          element={<GuestOnly><ForgotPasswordPage /></GuestOnly>}
+        />
+        <Route
+          path="/reset-password"
+          element={<GuestOnly><ResetPasswordPage /></GuestOnly>}
         />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

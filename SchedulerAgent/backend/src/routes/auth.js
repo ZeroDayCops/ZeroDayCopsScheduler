@@ -265,4 +265,122 @@ router.put('/notification-preferences', requireAuth, async (req, res) => {
   }
 });
 
+const crypto = require('crypto');
+const { sendPasswordResetEmail } = require('../services/mailer');
+
+/**
+ * POST /api/auth/forgot-password
+ * Generates a password reset token and sends an email via Gmail SMTP.
+ * Body: { email }
+ */
+router.post('/forgot-password', async (req, res) => {
+  try {
+    let { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    if (!email.includes('@')) {
+      email = `${email}@gmail.com`;
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      // Don't reveal user existence for security
+      return res.json({
+        success: true,
+        message: 'If an account with that email exists, a password reset link has been sent.',
+      });
+    }
+
+    // Generate random 64-char token & 6-digit numeric OTP
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const token = `${otpCode}-${rawToken}`;
+    const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetToken: token,
+        resetTokenExpiry: expiry,
+      },
+    });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'https://scheduler.zerodaycops.in';
+    const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
+
+    // Send email via Gmail SMTP
+    try {
+      await sendPasswordResetEmail(user.email, otpCode, resetUrl);
+    } catch (mailErr) {
+      console.error('[FORGOT PASSWORD EMAIL ERROR]', mailErr.message);
+      return res.status(500).json({ error: 'Failed to send password reset email via SMTP' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Password reset link and code sent to your email successfully.',
+    });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/auth/reset-password
+ * Resets user password using valid token.
+ * Body: { token, newPassword }
+ */
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'token and newPassword are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    // Find user with matching reset token (or matching 6-digit code prefix)
+    const users = await prisma.user.findMany({
+      where: {
+        resetTokenExpiry: { gte: new Date() },
+      },
+    });
+
+    const user = users.find(
+      (u) => u.resetToken === token || (u.resetToken && u.resetToken.startsWith(`${token}-`))
+    );
+
+    if (!user) {
+      return res.status(400).json({ error: 'Invalid or expired password reset token' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        resetToken: null,
+        resetTokenExpiry: null,
+      },
+    });
+
+    console.log(`[AUTH] Password successfully reset for user ${user.email}`);
+
+    res.json({
+      success: true,
+      message: 'Password has been reset successfully. You can now log in with your new password.',
+    });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;
+

@@ -169,7 +169,7 @@ async function runVerification() {
 
     // 7. Verify Analytics Endpoint Calculation & Automation Health Indicator
     console.log('\n--- Verifying Analytics Endpoint Metrics ---');
-    const analyticsRes = await prisma.$transaction(async () => {
+    const analyticsRes = await (async () => {
       // Simulate analytics endpoint logic directly
       const uploaded = await prisma.media.count({ where: { workspaceId: workspace.id } });
       const analyzed = await prisma.media.count({ where: { workspaceId: workspace.id, status: 'ANALYZED' } });
@@ -192,7 +192,7 @@ async function runVerification() {
           reasons: healthReasons,
         },
       };
-    });
+    })();
 
     console.log('Analytics Funnel Match:', analyticsRes.uploaded === 2 && analyticsRes.analyzed === 2 && analyticsRes.autoScheduled > 0 ? '✅ MATCH' : '❌ MISMATCH');
     console.log('Automation Health Status:', analyticsRes.automationHealth.status);

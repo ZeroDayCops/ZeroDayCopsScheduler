@@ -83,6 +83,14 @@ export const LoginPage: React.FC = () => {
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
             />
+            <div className="flex justify-end -mt-1">
+              <Link
+                to="/forgot-password"
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-medium hover:underline transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <Button type="submit" isLoading={isLoading} className="w-full mt-2" size="lg">
               Sign In
             </Button>
