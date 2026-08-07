@@ -5,10 +5,17 @@
 /**
  * Deduplicates and formats hashtags
  */
-function processHashtags(aiHashtags = [], defaultHashtags = []) {
+function processHashtags(aiHashtags = [], defaultHashtags = [], brandName = '') {
   const all = [...aiHashtags, ...defaultHashtags];
   const seen = new Set();
   const result = [];
+
+  // Brand hashtag ALWAYS first
+  if (brandName && brandName.trim()) {
+    const brandTag = '#' + brandName.trim().replace(/\s+/g, '');
+    seen.add(brandTag.toLowerCase());
+    result.push(brandTag);
+  }
 
   for (const tag of all) {
     if (!tag) continue;
@@ -60,7 +67,7 @@ function renderPost(media, workspace, template, platform) {
   // Format and merge hashtags
   const aiHashtags = aiJson.hashtags || [];
   const defaultHashtags = workspace.defaultHashtags || [];
-  const mergedHashtagsList = processHashtags(aiHashtags, defaultHashtags);
+  const mergedHashtagsList = processHashtags(aiHashtags, defaultHashtags, workspace.brandName);
   const hashtagsString = mergedHashtagsList.join(' ');
 
   // Render body

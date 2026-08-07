@@ -75,6 +75,8 @@ const { downloadFromR2 } = require('./r2Storage');
  * Generates dynamic, file-unique copy if offline or un-keyed.
  */
 function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, workspace) {
+  const brand = workspace.brandName || 'Brand';
+
   let baseName = path.basename(filename, path.extname(filename))
     .replace(/^file[-_]?/i, '')
     .replace(/[-_]/g, ' ')
@@ -85,40 +87,49 @@ function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, wor
 
   const cleanTitle = (baseName.length > 2)
     ? baseName.replace(/\b\w/g, c => c.toUpperCase()) 
-    : `${workspace.brandName || 'Brand'} Visual`;
+    : `${brand} Visual`;
 
   const emojiList = emojiStyle === 'heavy' ? ['🚀', '✨', '🔥', '📸', '⚡'] : emojiStyle === 'moderate' ? ['✨', '🎯'] : ['✨'];
   const emojiStr = emojiList.join(' ');
 
   const headlines = [
     `Unveiling ${cleanTitle} ${emojiStr}`,
-    `Next-Gen Spotlight: ${cleanTitle}`,
+    `Next-Gen Spotlight: ${cleanTitle} by ${brand}`,
     `Transforming Your Vision with ${cleanTitle}`,
-    `The Art of ${cleanTitle} — ${workspace.brandName || 'Brand Spotlight'}`,
+    `The Art of ${cleanTitle} — ${brand}`,
   ];
+
+  // Brand-integrated closings — rotate to avoid repetition
+  const closings = [
+    `\n\n— Team ${brand}`,
+    `\n\nOnly at ${brand}.`,
+    `\n\nCrafted with pride by ${brand}.`,
+    `\n\nExperience excellence at ${brand}.`,
+  ];
+  const randomIdx = Math.floor(Math.random() * headlines.length);
+  const closing = closings[randomIdx % closings.length];
 
   const copies = [
-    `A clean visual snapshot highlighting ${cleanTitle}. Built to share key project milestones and deliver clear, high-impact results. ${emojiStr}`,
-    `Presenting ${cleanTitle} — a concise look at our latest visual update. Designed to captivate your audience with clear brand detail. ${emojiStr}`,
-    `Here's a closer look at ${cleanTitle}. Elevating our visual content stream with sharp focus and professional quality. ${emojiStr}`,
+    `At ${brand}, we bring you ${cleanTitle} — built to share key milestones and deliver clear, high-impact results. ${emojiStr}${closing}`,
+    `Presenting ${cleanTitle} from ${brand} — a concise look at our latest visual update. Designed to captivate your audience with unmistakable brand detail. ${emojiStr}${closing}`,
+    `Discover ${cleanTitle} at ${brand}. Elevating our visual content stream with sharp focus and professional quality. ${emojiStr}${closing}`,
   ];
 
+  // Brand hashtag FIRST, then content-specific
   const hashPool = [
+    `#${brand.replace(/\s+/g, '')}`,
     `#${cleanTitle.replace(/\s+/g, '')}`,
-    `#${(workspace.brandName || 'Brand').replace(/\s+/g, '')}`,
-    '#Marketing', '#ContentStrategy', '#SocialMediaMarketing', '#VisualContent', '#BrandIdentity'
+    '#Marketing', '#ContentStrategy', '#BrandIdentity'
   ];
-
-  const randomIdx = Math.floor(Math.random() * headlines.length);
 
   return {
     product: cleanTitle,
     headline: headlines[randomIdx],
     description: copies[randomIdx % copies.length],
-    keywords: [cleanTitle.toLowerCase(), mediaType.toLowerCase(), "brand campaign", "social content"],
+    keywords: [cleanTitle.toLowerCase(), mediaType.toLowerCase(), brand.toLowerCase(), "social content"],
     hashtags: hashPool.slice(0, 4),
     mood: "modern and dynamic",
-    suggested_cta: workspace.cta || "Discover more",
+    suggested_cta: workspace.cta || `Discover more at ${brand}`,
   };
 }
 
@@ -215,7 +226,11 @@ async function analyzeMedia(mediaId) {
       console.warn('[AI ENGINE] Failed to fetch historical style examples:', histErr.message);
     }
 
-    let systemPrompt = `You are an expert social media brand manager crafting an authentic, context-aware caption and visual summary for "${media.workspace.brandName || 'the brand'}".
+    const brand = media.workspace.brandName || 'the brand';
+    const brandClean = (media.workspace.brandName || 'Brand').replace(/\s+/g, '');
+    const wsWebsite = media.workspace.website || '';
+
+    let systemPrompt = `You are the official marketing team for "${brand}". You write every caption, description, and title AS the brand — never as an anonymous content generator.
 ANALYZE THE ATTACHED IMAGE OR VIDEO FRAME IN DETAIL.
 
 PRIMARY SUBJECT & TEXT EXTRACTION RULES:
@@ -223,28 +238,50 @@ PRIMARY SUBJECT & TEXT EXTRACTION RULES:
 2. SECONDARY COLOR ONLY: Physical background details (e.g., clothing color, floor patterns, wall textures, furniture) are strictly secondary. Include them ONLY if they genuinely enhance the story — never lead with them or treat them as the main story.
 3. NO GENERIC AI FILLER: Do NOT use stock celebratory phrases or generic AI filler like "proudly presents", "inspiring moment", "significant achievement", "celebrating a stellar achievement", "unwavering dedication", or "future leaders" unless the text explicitly supports it. Write specific, grounded, authentic copy.
 
+BRAND IDENTITY RULES (MANDATORY — EVERY caption MUST follow these):
+- The brand name "${brand}" MUST appear naturally 1-3 times in the description.
+- Open or weave the brand into the caption naturally: e.g. "At ${brand}, ..." or "Discover our newest collection from ${brand}..."
+- NEVER stuff the brand name repeatedly — keep it natural.
+- Write from the brand's perspective: instead of "This product is perfect..." prefer "At ${brand}, this product is crafted to..."
+- The description MUST end with a branded closing signature. Vary it each time — examples:
+  "— Team ${brand}"
+  "Only at ${brand}."
+  "Crafted with pride by ${brand}."
+  ${wsWebsite ? `"Visit ${brand} at ${wsWebsite}."` : `"Experience excellence at ${brand}."`}
+  Choose the most natural ending. Do NOT repeat the same signature every time.
+
 BRAND VOICE & TONE GUIDANCE:
 - Brand Voice / Tone: ${brandVoice}
 - Emoji Style: ${emojiStyle === 'none' || emojiStyle === 'minimal' ? 'Minimal or no emojis — strictly formal, clean, and premium' : emojiStyle === 'heavy' ? 'Energetic with relevant emojis' : 'Selective, tasteful emojis'}
 ${media.workspace.cta ? `- Workspace Target CTA: "${media.workspace.cta}"` : ''}
 
 CALL TO ACTION (suggested_cta) RULES:
-${media.workspace.cta ? `- PRIMARY RULE: Use the workspace CTA "${media.workspace.cta}" directly or adapt it tightly to match the image subject. Do NOT output canned filler like "Explore the impact of our community's work!".` : '- Provide a direct, specific call to action strictly tied to the subject matter in the image. Never output generic canned filler like "Explore the impact of our community\'s work!" or "Join us in congratulating him!".'}
+- The CTA MUST reinforce the brand. Include "${brand}" in the CTA.
+${media.workspace.cta ? `- PRIMARY RULE: Use the workspace CTA "${media.workspace.cta}" directly or adapt it tightly to match the image subject and include the brand name. Do NOT output canned filler.` : `- Provide a direct, specific call to action tied to the subject matter AND the brand. E.g. "Visit ${brand} today" or "Discover the latest at ${brand}". Never output generic canned filler.`}
 
 HASHTAG RULES:
-- Generate 3 to 5 highly specific, content-driven hashtags based strictly on what is depicted (e.g. #BugBounty #VulnerabilityDisclosure #NASAPatch).
+- The FIRST hashtag MUST always be the brand hashtag: #${brandClean}
+- Then generate 2 to 4 additional highly specific, content-driven hashtags based strictly on what is depicted.
 - STRICT PROHIBITION: Do NOT include generic filler hashtags like #Achievement, #Recognition, #Innovation, #ProudMoment, #Success, or #Milestone.
 - Do NOT include default workspace hashtags (${(media.workspace.defaultHashtags || []).join(', ')}) — those will be appended automatically.
 
+QUALITY VALIDATION (self-check before returning):
+✅ Brand name "${brand}" appears in the description (1-3 times naturally)
+✅ Description ends with a branded closing signature
+✅ suggested_cta includes the brand name
+✅ First hashtag is #${brandClean}
+✅ Tone matches the brand voice
+If any condition fails, fix it before returning.
+
 Schema Requirements (return ONLY a single valid raw JSON object matching this exact Master JSON schema):
 {
-  "product": "Specific title identifying the exact subject/document/product (e.g. NASA Vulnerability Disclosure Recognition)",
-  "headline": "Punchy, specific hook summarizing the actual accomplishment or feature in the brand voice",
-  "description": "2-3 sentence authentic caption grounded in the extracted text/subject and brand voice. Lead with what the document/object is, not background scenery.",
+  "product": "Specific title identifying the exact subject/document/product",
+  "headline": "Punchy, specific hook in the brand voice — may include ${brand}",
+  "description": "2-3 sentence branded caption. Must include ${brand} naturally 1-3 times. Must end with a branded closing signature.",
   "keywords": ["keyword1", "keyword2", "keyword3"],
-  "hashtags": ["#SpecificTag1", "#SpecificTag2", "#SpecificTag3"],
+  "hashtags": ["#${brandClean}", "#SpecificTag1", "#SpecificTag2"],
   "mood": "Visual vibe (e.g. authoritative, technical, executive, sleek)",
-  "suggested_cta": "${media.workspace.cta ? media.workspace.cta : 'Specific action matching content'}"
+  "suggested_cta": "Brand-reinforcing CTA including ${brand}"
 }`;
 
     if (brandDescription) {
