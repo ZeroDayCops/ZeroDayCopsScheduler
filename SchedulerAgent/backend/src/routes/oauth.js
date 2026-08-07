@@ -429,26 +429,33 @@ router.get('/:platform/callback', requireAuth, async (req, res) => {
     }
     }
 
-    // Save tokens and update database
+    // Save tokens and update database via upsert (creates SocialAccount record if missing)
     const expiresAtDate = tokenData.expires_at 
       ? new Date(tokenData.expires_at) 
-      : new Date(Date.now() + tokenData.expires_in * 1000);
+      : (tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null);
 
-    await prisma.socialAccount.update({
+    const updateData = {
+      status: 'CONNECTED',
+      accountName,
+      externalAccountId,
+      accessTokenEncrypted: encrypt(tokenData.access_token),
+      refreshTokenEncrypted: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : undefined,
+      expiresAt: expiresAtDate,
+      ...(tokenData.pagesJson !== undefined ? { pagesJson: tokenData.pagesJson } : {}),
+    };
+
+    await prisma.socialAccount.upsert({
       where: {
         workspaceId_platform: {
           workspaceId,
           platform: upperPlatform,
         },
       },
-      data: {
-        status: 'CONNECTED',
-        accountName,
-        externalAccountId,
-        accessTokenEncrypted: encrypt(tokenData.access_token),
-        refreshTokenEncrypted: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : undefined,
-        expiresAt: expiresAtDate,
-        ...(tokenData.pagesJson !== undefined ? { pagesJson: tokenData.pagesJson } : {}),
+      update: updateData,
+      create: {
+        workspaceId,
+        platform: upperPlatform,
+        ...updateData,
       },
     });
 
@@ -613,14 +620,20 @@ router.put('/:platform/author', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'No membership in this organization' });
     }
 
-    const updated = await prisma.socialAccount.update({
+    const updated = await prisma.socialAccount.upsert({
       where: {
         workspaceId_platform: {
           workspaceId,
           platform: upperPlatform,
         },
       },
-      data: {
+      update: {
+        selectedAuthorUrn: selectedAuthorUrn || null,
+      },
+      create: {
+        workspaceId,
+        platform: upperPlatform,
+        status: 'NOT_CONNECTED',
         selectedAuthorUrn: selectedAuthorUrn || null,
       },
     });
@@ -671,14 +684,14 @@ router.post('/:platform/disconnect', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'No membership in this organization' });
     }
 
-    await prisma.socialAccount.update({
+    await prisma.socialAccount.upsert({
       where: {
         workspaceId_platform: {
           workspaceId,
           platform: upperPlatform,
         },
       },
-      data: {
+      update: {
         status: 'NOT_CONNECTED',
         accountName: null,
         externalAccountId: null,
@@ -687,6 +700,11 @@ router.post('/:platform/disconnect', requireAuth, async (req, res) => {
         expiresAt: null,
         selectedAuthorUrn: null,
         pagesJson: null,
+      },
+      create: {
+        workspaceId,
+        platform: upperPlatform,
+        status: 'NOT_CONNECTED',
       },
     });
 
