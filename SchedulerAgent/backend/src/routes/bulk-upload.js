@@ -9,6 +9,15 @@ const { createDateInTimezone, parseFilenameSchedule } = require('../services/fil
 const router = express.Router();
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.avi', '.mkv'];
+const ALL_MEDIA_EXTS = [...IMAGE_EXTS, ...VIDEO_EXTS];
+
+function detectMediaType(filename) {
+  const ext = path.extname(filename || '').toLowerCase();
+  if (IMAGE_EXTS.includes(ext)) return 'IMAGE';
+  if (VIDEO_EXTS.includes(ext)) return 'VIDEO';
+  return null;
+}
 
 /**
  * Helper to compute scheduled date per image based on scheduleConfig.
@@ -97,11 +106,11 @@ router.post('/workspaces/:id/media/bulk-upload-urls', requireAuth, requireWorksp
       return res.status(400).json({ error: 'Bulk upload is limited to a maximum of 20 images per batch' });
     }
 
-    // Extension validation
+    // Extension validation — accept images AND videos
     for (const f of files) {
       const ext = path.extname(f.filename || '').toLowerCase();
-      if (!IMAGE_EXTS.includes(ext)) {
-        return res.status(400).json({ error: `Unsupported image format for file: ${f.filename}. Bulk upload supports JPEG, PNG, WEBP, GIF.` });
+      if (!ALL_MEDIA_EXTS.includes(ext)) {
+        return res.status(400).json({ error: `Unsupported file format for file: ${f.filename}. Bulk upload supports JPEG, PNG, WEBP, GIF, MP4, MOV, WEBM, AVI, MKV.` });
       }
     }
 
@@ -138,7 +147,7 @@ router.post('/workspaces/:id/media/bulk-upload-urls', requireAuth, requireWorksp
             filepath: destinationKey,
             r2Url: presigned.publicUrl,
             r2Key: presigned.key,
-            mediaType: 'IMAGE',
+            mediaType: detectMediaType(file.filename) || 'IMAGE',
             status: 'NEW',
             batchId: batch.id,
             sequenceIndex: i,
@@ -361,6 +370,10 @@ router.post('/upload-batches/:id/commit', requireAuth, async (req, res) => {
         if (sa.status !== 'CONNECTED' && process.env.ALLOW_UNCONNECTED_SCHEDULING !== 'true') {
           continue;
         }
+
+        // Platform per mediaType compatibility gate
+        if (media.mediaType === 'IMAGE' && sa.platform === 'YOUTUBE') continue;
+        if (media.mediaType === 'VIDEO' && sa.platform === 'LINKEDIN') continue;
 
         // Find template for platform
         let template = await prisma.template.findFirst({

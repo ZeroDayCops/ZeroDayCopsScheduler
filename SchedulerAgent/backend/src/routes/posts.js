@@ -70,6 +70,9 @@ router.post('/scheduled-posts', requireAuth, requireWorkspaceAccess, async (req,
     if (upperPlatform === 'YOUTUBE' && media.mediaType === 'IMAGE') {
       return res.status(400).json({ error: 'YouTube requires video assets. Cannot schedule an image to YouTube.' });
     }
+    if (upperPlatform === 'LINKEDIN' && media.mediaType === 'VIDEO') {
+      return res.status(400).json({ error: 'LinkedIn publishing currently supports image assets only. Cannot schedule a video to LinkedIn.' });
+    }
 
     // Find custom template for workspace + platform, falling back to default
     let template = await prisma.template.findFirst({
@@ -198,6 +201,9 @@ router.put('/scheduled-posts/:id', requireAuth, requireWorkspaceAccess, async (r
       // Media-type / platform compatibility validation
       if (activePlatform === 'YOUTUBE' && media.mediaType === 'IMAGE') {
         return res.status(400).json({ error: 'YouTube requires video assets. Cannot schedule an image to YouTube.' });
+      }
+      if (activePlatform === 'LINKEDIN' && media.mediaType === 'VIDEO') {
+        return res.status(400).json({ error: 'LinkedIn publishing currently supports image assets only. Cannot schedule a video to LinkedIn.' });
       }
 
       // Fetch template

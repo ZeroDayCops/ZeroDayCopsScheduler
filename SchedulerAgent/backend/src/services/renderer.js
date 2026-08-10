@@ -56,6 +56,11 @@ function renderPost(media, workspace, template, platform) {
       error: 'YouTube requires video assets. Cannot generate a YouTube draft from an image.',
     };
   }
+  if (platform === 'LINKEDIN' && media.mediaType === 'VIDEO') {
+    return {
+      error: 'LinkedIn publishing currently supports image assets only. Cannot schedule a video to LinkedIn.',
+    };
+  }
 
   const aiJson = media.aiMasterJson || {};
   
@@ -118,11 +123,46 @@ function renderPost(media, workspace, template, platform) {
     if (headline.length > 100) {
       warnings.push(`Pinterest title exceeds limit of 100 characters (will be truncated to: "${title}").`);
     }
-    let finalBody = body;
-    if (body.length > 500) {
-      finalBody = body.substring(0, 500);
-      warnings.push(`Pinterest description exceeds character limit of 500 (currently ${body.length} characters) (will be truncated to 500 characters).`);
+
+    // Budget-aware Pinterest description assembly (500 char hard limit)
+    const PINTEREST_DESC_LIMIT = 500;
+
+    // Start with the core description from the template (contains {{description}}, {{cta}}, but NOT hashtags yet)
+    const templateWithoutHashtags = template.templateBody.replace(/\{\{hashtags\}\}/g, '').trim();
+    let coreBody = substituteTemplate(templateWithoutHashtags, {
+      headline,
+      description,
+      cta,
+      hashtags: '',
+    }).trim();
+
+    // If core body alone exceeds limit, truncate at word boundary
+    if (coreBody.length > PINTEREST_DESC_LIMIT) {
+      const truncated = coreBody.substring(0, PINTEREST_DESC_LIMIT);
+      const lastSpace = truncated.lastIndexOf(' ');
+      coreBody = lastSpace > PINTEREST_DESC_LIMIT * 0.6 ? truncated.substring(0, lastSpace) : truncated;
+      warnings.push(`Pinterest description text alone exceeds ${PINTEREST_DESC_LIMIT} characters — truncated at word boundary to ${coreBody.length} characters.`);
     }
+
+    // Add hashtags one at a time, respecting budget
+    let finalBody = coreBody;
+    const hashtagSeparator = '\n\n';
+    let addedAnyHashtag = false;
+
+    for (const tag of mergedHashtagsList) {
+      const separator = addedAnyHashtag ? ' ' : hashtagSeparator;
+      const candidate = finalBody + separator + tag;
+      if (candidate.length <= PINTEREST_DESC_LIMIT) {
+        finalBody = candidate;
+        addedAnyHashtag = true;
+      } else {
+        // No more room — stop adding hashtags
+        const droppedCount = mergedHashtagsList.length - mergedHashtagsList.indexOf(tag);
+        warnings.push(`Dropped ${droppedCount} hashtag(s) to stay within Pinterest's ${PINTEREST_DESC_LIMIT}-character description limit.`);
+        break;
+      }
+    }
+
     return {
       title,
       body: finalBody,

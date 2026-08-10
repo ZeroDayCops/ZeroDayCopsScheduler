@@ -291,9 +291,7 @@ async function publishToPinterest(post, decryptedToken, media) {
 
           if (status === 'succeeded') {
             console.log(`[PINTEREST] Step 4: Creating Video Pin (Pinterest auto-generates cover from key frame)...`);
-            const pinResponse = await axios.post(
-              `${pinterestApiBase}/v5/pins`,
-              {
+            const videoPinPayload = {
                 board_id: boardId,
                 title: post.renderedContent.title || 'New Video Pin',
                 description: post.renderedContent.body,
@@ -302,7 +300,13 @@ async function publishToPinterest(post, decryptedToken, media) {
                   media_id,
                   cover_image_key_frame_time: 2,
                 },
-              },
+              };
+            if (post.workspace?.website && post.workspace.website.trim()) {
+              videoPinPayload.link = post.workspace.website.trim();
+            }
+            const pinResponse = await axios.post(
+              `${pinterestApiBase}/v5/pins`,
+              videoPinPayload,
               {
                 headers: {
                   Authorization: `Bearer ${decryptedToken}`,
@@ -342,14 +346,18 @@ async function publishToPinterest(post, decryptedToken, media) {
         coverFramePath = await extractPinterestVideoFrame(media.filepath);
         const fallbackSource = await preparePinterestMediaSource(coverFramePath, true);
 
-        const pinResponse = await axios.post(
-          `${pinterestApiBase}/v5/pins`,
-          {
+        const fallbackPinPayload = {
             board_id: boardId,
             title: post.renderedContent.title || 'New Pin',
             description: post.renderedContent.body,
             media_source: fallbackSource,
-          },
+          };
+        if (post.workspace?.website && post.workspace.website.trim()) {
+          fallbackPinPayload.link = post.workspace.website.trim();
+        }
+        const pinResponse = await axios.post(
+          `${pinterestApiBase}/v5/pins`,
+          fallbackPinPayload,
           {
             headers: {
               Authorization: `Bearer ${decryptedToken}`,
@@ -374,14 +382,18 @@ async function publishToPinterest(post, decryptedToken, media) {
     // 3. STATIC IMAGE PIN SEQUENCE
     const mediaSource = await preparePinterestMediaSource(media.filepath, false);
 
-    const pinResponse = await axios.post(
-      `${pinterestApiBase}/v5/pins`,
-      {
+    const imagePinPayload = {
         board_id: boardId,
         title: post.renderedContent.title || 'New Pin',
         description: post.renderedContent.body,
         media_source: mediaSource,
-      },
+      };
+    if (post.workspace?.website && post.workspace.website.trim()) {
+      imagePinPayload.link = post.workspace.website.trim();
+    }
+    const pinResponse = await axios.post(
+      `${pinterestApiBase}/v5/pins`,
+      imagePinPayload,
       {
         headers: {
           Authorization: `Bearer ${decryptedToken}`,

@@ -238,17 +238,11 @@ PRIMARY SUBJECT & TEXT EXTRACTION RULES:
 2. SECONDARY COLOR ONLY: Physical background details (e.g., clothing color, floor patterns, wall textures, furniture) are strictly secondary. Include them ONLY if they genuinely enhance the story — never lead with them or treat them as the main story.
 3. NO GENERIC AI FILLER: Do NOT use stock celebratory phrases or generic AI filler like "proudly presents", "inspiring moment", "significant achievement", "celebrating a stellar achievement", "unwavering dedication", or "future leaders" unless the text explicitly supports it. Write specific, grounded, authentic copy.
 
-BRAND IDENTITY RULES (MANDATORY — EVERY caption MUST follow these):
-- The brand name "${brand}" MUST appear naturally 1-3 times in the description.
-- Open or weave the brand into the caption naturally: e.g. "At ${brand}, ..." or "Discover our newest collection from ${brand}..."
-- NEVER stuff the brand name repeatedly — keep it natural.
-- Write from the brand's perspective: instead of "This product is perfect..." prefer "At ${brand}, this product is crafted to..."
-- The description MUST end with a branded closing signature. Vary it each time — examples:
-  "— Team ${brand}"
-  "Only at ${brand}."
-  "Crafted with pride by ${brand}."
-  ${wsWebsite ? `"Visit ${brand} at ${wsWebsite}."` : `"Experience excellence at ${brand}."`}
-  Choose the most natural ending. Do NOT repeat the same signature every time.
+BRAND IDENTITY RULES (MANDATORY):
+- The brand name "${brand}" should appear AT MOST ONCE across the headline and description combined. One natural mention is ideal — do NOT repeat it multiple times.
+- Write from the brand's perspective (first person plural: "we", "our") without needing to name-drop repeatedly.
+- Do NOT add a branded closing signature (e.g. "— Team ${brand}") — that creates redundant brand stuffing when combined with hashtags and CTA.
+- Keep the tone authentic and grounded. The brand identity comes through voice and quality, not repetition.
 
 BRAND VOICE & TONE GUIDANCE:
 - Brand Voice / Tone: ${brandVoice}
@@ -256,8 +250,9 @@ BRAND VOICE & TONE GUIDANCE:
 ${media.workspace.cta ? `- Workspace Target CTA: "${media.workspace.cta}"` : ''}
 
 CALL TO ACTION (suggested_cta) RULES:
-- The CTA MUST reinforce the brand. Include "${brand}" in the CTA.
-${media.workspace.cta ? `- PRIMARY RULE: Use the workspace CTA "${media.workspace.cta}" directly or adapt it tightly to match the image subject and include the brand name. Do NOT output canned filler.` : `- Provide a direct, specific call to action tied to the subject matter AND the brand. E.g. "Visit ${brand} today" or "Discover the latest at ${brand}". Never output generic canned filler.`}
+- Provide a direct, specific call to action tied to the image subject.
+${media.workspace.cta ? `- PRIMARY RULE: Use the workspace CTA "${media.workspace.cta}" directly or adapt it tightly to match the image subject. Do NOT output canned filler.` : `- E.g. "Visit us today" or "Discover the latest". Never output generic canned filler.`}
+- Including the brand name in the CTA is optional — only if it reads naturally.
 
 HASHTAG RULES:
 - The FIRST hashtag MUST always be the brand hashtag: #${brandClean}
@@ -266,18 +261,18 @@ HASHTAG RULES:
 - Do NOT include default workspace hashtags (${(media.workspace.defaultHashtags || []).join(', ')}) — those will be appended automatically.
 
 QUALITY VALIDATION (self-check before returning):
-✅ Brand name "${brand}" appears in the description (1-3 times naturally)
-✅ Description ends with a branded closing signature
-✅ suggested_cta includes the brand name
+✅ Brand name "${brand}" appears at most once across headline + description combined
+✅ No branded closing signature appended
 ✅ First hashtag is #${brandClean}
 ✅ Tone matches the brand voice
+✅ Description is approximately 300-350 characters
 If any condition fails, fix it before returning.
 
 Schema Requirements (return ONLY a single valid raw JSON object matching this exact Master JSON schema):
 {
   "product": "Specific title identifying the exact subject/document/product",
   "headline": "Punchy, specific hook in the brand voice — may include ${brand}",
-  "description": "2-3 sentence branded caption. Must include ${brand} naturally 1-3 times. Must end with a branded closing signature.",
+  "description": "2-3 sentence branded caption, approximately 300-350 characters max (to leave room for hashtags and CTA appended afterward). Must include the brand name naturally. Must end with a branded closing signature.",
   "keywords": ["keyword1", "keyword2", "keyword3"],
   "hashtags": ["#${brandClean}", "#SpecificTag1", "#SpecificTag2"],
   "mood": "Visual vibe (e.g. authoritative, technical, executive, sleek)",
