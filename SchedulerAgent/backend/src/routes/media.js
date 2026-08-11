@@ -135,7 +135,7 @@ router.post('/:id/regenerate-caption', requireAuth, async (req, res) => {
  */
 router.patch('/:id/caption', requireAuth, async (req, res) => {
   try {
-    const editableFields = new Set(['headline', 'description', 'keywords', 'hashtags']);
+    const editableFields = new Set(['headline', 'description', 'keywords', 'hashtags', 'destinationUrl']);
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return res.status(400).json({ error: 'Caption update body must be an object.' });
@@ -164,12 +164,24 @@ router.patch('/:id/caption', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Media must have a completed analysis before its caption can be edited.' });
     }
 
-    const aiMasterJson = parseMasterJson(JSON.stringify({ ...media.aiMasterJson, ...body }));
+    const { destinationUrl, ...captionBody } = body;
+    const updateData = { status: 'ANALYZED' };
+
+    if (destinationUrl !== undefined) {
+      updateData.destinationUrl = typeof destinationUrl === 'string' && destinationUrl.trim() ? destinationUrl.trim() : null;
+    }
+
+    let aiMasterJson = media.aiMasterJson;
+    if (Object.keys(captionBody).length > 0) {
+      aiMasterJson = parseMasterJson(JSON.stringify({ ...media.aiMasterJson, ...captionBody }));
+      updateData.aiMasterJson = aiMasterJson;
+    }
+
     const updatedMedia = await prisma.media.update({
       where: { id: media.id },
-      data: { aiMasterJson, status: 'ANALYZED' },
+      data: updateData,
     });
-    const refreshedPostIds = await refreshPendingPostSnapshots({ ...media, aiMasterJson });
+    const refreshedPostIds = await refreshPendingPostSnapshots({ ...updatedMedia, aiMasterJson });
 
     res.json({
       media: updatedMedia,

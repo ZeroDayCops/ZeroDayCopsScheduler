@@ -464,9 +464,14 @@ PRIMARY SUBJECT & TEXT EXTRACTION RULES:
 GARMENT & ATTIRE RECOGNITION (ETHNIC WEAR):
 - Actively analyze and identify specific ethnic-wear garment types from the image directly (e.g. Sherwani, Jodhpuri Suit, Indo-Western, Kurta Pajama, Bandhgala, Nehru Jacket, Tuxedo, Lehenga, Saree) rather than generic terms like "outfit", "clothing", or "apparel". Use precise fashion terminology in headlines and copy.
 
-BRAND IDENTITY RULES (MANDATORY):
-- The brand name "${brand}" should appear AT MOST ONCE across the headline and description combined. One natural mention is ideal — do NOT repeat it multiple times.
-- Write from the brand's perspective (first person plural: "we", "our") without needing to name-drop repeatedly.
+BRAND IDENTITY & HEADLINE/CAPTION STRUCTURE RULES (MANDATORY):
+1. HEADLINE FORMAT (STRICT): The headline MUST explicitly incorporate both the brand name "${brand}" and the identified product name in this exact structure:
+   "${brand} [Product Name] — [Title / Subject]"
+   Example: "${brand} Sherwani — Embodying Elegance: Two Masterpieces, One Vision"
+2. DESCRIPTION OPENING (STRICT): The description MUST open directly by introducing both the brand "${brand}" and the specific product name in the very first sentence.
+   Example: "Discover the exclusive ${brand} Sherwani collection, where intricate embroidery meets regal silhouettes..."
+3. PLATFORM VARIANTS STYLING: When platform_variants are generated for LinkedIn, Pinterest, or YouTube, maintain this exact ${brand} + Product Name identity while adhering strictly to each platform's style guide and template format.
+4. NO REPETITIVE BRAND STUFFING: Apart from the opening headline and introductory sentence, do not repeat the brand name unnecessarily. Write naturally from the brand's perspective ("we", "our").
 - Do NOT add a branded closing signature (e.g. "— Team ${brand}") — that creates redundant brand stuffing when combined with hashtags and CTA.
 - Keep the tone authentic and grounded. The brand identity comes through voice and quality, not repetition.
 

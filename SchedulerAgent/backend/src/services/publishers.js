@@ -301,8 +301,9 @@ async function publishToPinterest(post, decryptedToken, media) {
                   cover_image_key_frame_time: 2,
                 },
               };
-            if (post.workspace?.website && post.workspace.website.trim()) {
-              videoPinPayload.link = post.workspace.website.trim();
+            const targetLink = media?.destinationUrl || post.renderedContent?.destinationUrl || post.workspace?.website;
+            if (targetLink && targetLink.trim()) {
+              videoPinPayload.link = targetLink.trim();
             }
             const pinResponse = await axios.post(
               `${pinterestApiBase}/v5/pins`,
@@ -352,8 +353,9 @@ async function publishToPinterest(post, decryptedToken, media) {
             description: post.renderedContent.body,
             media_source: fallbackSource,
           };
-        if (post.workspace?.website && post.workspace.website.trim()) {
-          fallbackPinPayload.link = post.workspace.website.trim();
+        const targetLink = media?.destinationUrl || post.renderedContent?.destinationUrl || post.workspace?.website;
+        if (targetLink && targetLink.trim()) {
+          fallbackPinPayload.link = targetLink.trim();
         }
         const pinResponse = await axios.post(
           `${pinterestApiBase}/v5/pins`,
@@ -388,8 +390,9 @@ async function publishToPinterest(post, decryptedToken, media) {
         description: post.renderedContent.body,
         media_source: mediaSource,
       };
-    if (post.workspace?.website && post.workspace.website.trim()) {
-      imagePinPayload.link = post.workspace.website.trim();
+    const targetLink = media?.destinationUrl || post.renderedContent?.destinationUrl || post.workspace?.website;
+    if (targetLink && targetLink.trim()) {
+      imagePinPayload.link = targetLink.trim();
     }
     const pinResponse = await axios.post(
       `${pinterestApiBase}/v5/pins`,

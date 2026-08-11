@@ -168,6 +168,7 @@ model Media {
   statusDetail String?
   aiMasterJson Json?
   aiDegraded   Boolean     @default(false)
+  destinationUrl String?
   batchId      String?
   sequenceIndex Int?
   createdAt    DateTime    @default(now())

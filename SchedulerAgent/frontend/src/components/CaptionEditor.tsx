@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Loader2, Plus, Save, Sparkles, X } from 'lucide-react';
+import { CheckCircle2, Globe, Loader2, Plus, Save, Sparkles, X } from 'lucide-react';
 import { fetchApi } from '../lib/api';
 import { Button } from './ui/Button';
 
 export interface CaptionEditorMedia {
   id: string;
   status: 'NEW' | 'ANALYZING' | 'ANALYZED' | 'FAILED';
+  destinationUrl?: string | null;
   aiMasterJson?: Record<string, unknown> | null;
 }
 
@@ -14,6 +15,7 @@ interface MasterJsonDraft {
   description: string;
   keywords: string[];
   hashtags: string[];
+  destinationUrl: string;
 }
 
 interface CaptionUpdateResponse {
@@ -29,12 +31,13 @@ interface CaptionEditorProps {
   compact?: boolean;
 }
 
-function draftFromMasterJson(masterJson?: Record<string, unknown> | null): MasterJsonDraft {
+function draftFromMasterJson(masterJson?: Record<string, unknown> | null, destinationUrl?: string | null): MasterJsonDraft {
   return {
     headline: typeof masterJson?.headline === 'string' ? masterJson.headline : '',
     description: typeof masterJson?.description === 'string' ? masterJson.description : '',
     keywords: Array.isArray(masterJson?.keywords) ? masterJson.keywords.filter((value): value is string => typeof value === 'string') : [],
     hashtags: Array.isArray(masterJson?.hashtags) ? masterJson.hashtags.filter((value): value is string => typeof value === 'string') : [],
+    destinationUrl: typeof destinationUrl === 'string' ? destinationUrl : '',
   };
 }
 
@@ -47,7 +50,7 @@ function parseList(value: string, isHashtag = false): string[] {
 }
 
 export const CaptionEditor: React.FC<CaptionEditorProps> = ({ media, onUpdated, compact = false }) => {
-  const [draft, setDraft] = useState<MasterJsonDraft>(() => draftFromMasterJson(media.aiMasterJson));
+  const [draft, setDraft] = useState<MasterJsonDraft>(() => draftFromMasterJson(media.aiMasterJson, media.destinationUrl));
   const [userTags, setUserTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [notes, setNotes] = useState('');
@@ -57,16 +60,16 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ media, onUpdated, 
   const [confirmation, setConfirmation] = useState<string | null>(null);
 
   useEffect(() => {
-    setDraft(draftFromMasterJson(media.aiMasterJson));
+    setDraft(draftFromMasterJson(media.aiMasterJson, media.destinationUrl));
     setUserTags([]);
     setTagInput('');
     setNotes('');
     setError(null);
     setConfirmation(null);
-  }, [media.id, media.aiMasterJson]);
+  }, [media.id, media.aiMasterJson, media.destinationUrl]);
 
   const applyUpdate = (result: CaptionUpdateResponse) => {
-    setDraft(draftFromMasterJson(result.aiMasterJson));
+    setDraft(draftFromMasterJson(result.aiMasterJson, result.media?.destinationUrl ?? draft.destinationUrl));
     setConfirmation(
       result.refreshedPostCount > 0
         ? `${result.refreshedPostCount} scheduled post${result.refreshedPostCount === 1 ? '' : 's'} updated.`
@@ -160,6 +163,17 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ media, onUpdated, 
       <Button type="button" variant="secondary" size="sm" onClick={generate} isLoading={isGenerating} icon={isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}>Generate</Button>
 
       <div className="space-y-3 rounded-xl border border-white/5 bg-[#070b14] p-3">
+        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Destination Link (URL) <span className="normal-case text-slate-600">(Overrides website link for Pinterest & social posts)</span>
+          <div className="relative mt-1.5 flex items-center">
+            <Globe className="absolute left-2.5 w-3.5 h-3.5 text-indigo-400 pointer-events-none" />
+            <input
+              value={draft.destinationUrl}
+              onChange={event => setDraft(current => ({ ...current, destinationUrl: event.target.value }))}
+              placeholder="https://jamairaja.in/collection/sherwani"
+              className="w-full rounded-lg border border-white/10 bg-slate-900/70 pl-8 pr-2.5 py-2 text-xs text-slate-200 outline-none focus:border-indigo-500"
+            />
+          </div>
+        </label>
         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Headline
           <input value={draft.headline} onChange={event => setDraft(current => ({ ...current, headline: event.target.value }))}
             className="mt-1.5 w-full rounded-lg border border-white/10 bg-slate-900/70 px-2.5 py-2 text-xs text-slate-200 outline-none focus:border-indigo-500" />
