@@ -11,6 +11,7 @@ import {
 } from '../hooks/useBulkUpload';
 import { API_BASE } from '../lib/api';
 import { Button } from './ui/Button';
+import { CaptionEditor } from './CaptionEditor';
 import {
   UploadCloud,
   X,
@@ -43,6 +44,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
   const [createdBatchId, setCreatedBatchId] = useState<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [draggedMediaIndex, setDraggedMediaIndex] = useState<number | null>(null);
+  const [selectedCaptionMediaId, setSelectedCaptionMediaId] = useState<string | null>(null);
 
   // Schedule config state
   const todayStr = new Date().toISOString().split('T')[0];
@@ -57,9 +59,10 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: batchData } = useBatchStatus(createdBatchId);
+  const { data: batchData, refetch: refetchBatch } = useBatchStatus(createdBatchId);
   const batch = batchData?.batch;
   const mediaList = batch?.media || [];
+  const selectedCaptionMedia = mediaList.find((media) => media.id === selectedCaptionMediaId) || null;
 
   // Re-run schedule preview when config or media order changes
   useEffect(() => {
@@ -243,8 +246,9 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
                       onDragStart={() => handleDragStartMedia(idx)}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={() => handleDropMedia(idx)}
+                      onClick={() => setSelectedCaptionMediaId(media.id)}
                       className={`bg-[#080d18] border rounded-2xl p-2.5 space-y-2 cursor-grab active:cursor-grabbing group hover:border-indigo-500/50 transition relative ${
-                        media.status === 'FAILED' ? 'border-rose-500/40 bg-rose-500/5' : 'border-white/10'
+                        selectedCaptionMediaId === media.id ? 'border-indigo-500 bg-indigo-500/5' : media.status === 'FAILED' ? 'border-rose-500/40 bg-rose-500/5' : 'border-white/10'
                       }`}
                     >
                       <div className="aspect-square bg-black/60 rounded-xl overflow-hidden relative flex items-center justify-center">
@@ -296,6 +300,22 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
                     </div>
                   ))}
                 </div>
+                {selectedCaptionMedia && (
+                  <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="min-w-0 text-xs font-bold text-slate-200 truncate">Edit caption: {selectedCaptionMedia.filename}</div>
+                      <button type="button" onClick={() => setSelectedCaptionMediaId(null)} className="rounded-lg p-1 text-slate-500 hover:bg-white/5 hover:text-white" aria-label="Close caption editor"><X className="w-4 h-4" /></button>
+                    </div>
+                    <CaptionEditor
+                      media={selectedCaptionMedia}
+                      compact
+                      onUpdated={(updated) => {
+                        setSelectedCaptionMediaId(updated.id);
+                        refetchBatch();
+                      }}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Right Column: Schedule Config & Preview (5 cols) */}

@@ -8,7 +8,7 @@ import { ConfirmDialog } from './ui/ConfirmDialog';
 import { EmptyState } from './ui/EmptyState';
 import { ErrorState } from './ui/ErrorState';
 import { SkeletonGrid } from './ui/Skeleton';
-import { UploadCloud, Image, Video, ChevronRight, Sparkles, Tag, Hash, Smile, Trash2, Loader2, XCircle } from 'lucide-react';
+import { UploadCloud, Image, Video, ChevronRight, Sparkles, Smile, Trash2, Loader2, XCircle } from 'lucide-react';
 
 interface MediaItem {
   id: string; filename: string; mediaType: 'IMAGE' | 'VIDEO';
@@ -36,6 +36,7 @@ const MediaStatusBadge: React.FC<{ media: MediaItem }> = ({ media }) => {
 
 import { parseFilenameScheduleFrontend, formatInWorkspaceTimezone } from '../lib/date-utils';
 import { BulkUploadModal } from './BulkUploadModal';
+import { CaptionEditor } from './CaptionEditor';
 import { Layers } from 'lucide-react';
 
 export const MediaLibraryView: React.FC = () => {
@@ -180,13 +181,16 @@ export const MediaLibraryView: React.FC = () => {
               </div>
               <div className="bg-[#070b14] border border-white/5 rounded-xl p-4 space-y-3 text-xs">
                 {selectedMedia.aiMasterJson.product && <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Theme</span><div className="text-sm font-bold text-indigo-300 mt-1">{selectedMedia.aiMasterJson.product}</div></div>}
-                {selectedMedia.aiMasterJson.headline && <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Headline</span><div className="font-bold text-slate-200 mt-1 italic">"{selectedMedia.aiMasterJson.headline}"</div></div>}
-                {selectedMedia.aiMasterJson.description && <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Copy</span><div className="text-slate-300 leading-relaxed mt-1 whitespace-pre-wrap">{selectedMedia.aiMasterJson.description}</div></div>}
                 {selectedMedia.aiMasterJson.suggested_cta && <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">CTA</span><div className="font-semibold text-purple-300 mt-1">{selectedMedia.aiMasterJson.suggested_cta}</div></div>}
                 {selectedMedia.aiMasterJson.mood && <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-800 text-slate-400"><Smile className="w-3.5 h-3.5" />Mood: {selectedMedia.aiMasterJson.mood}</div>}
-                {selectedMedia.aiMasterJson.keywords && <div><div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1.5 flex items-center gap-1"><Tag className="w-3 h-3" />Keywords</div><div className="flex flex-wrap gap-1">{selectedMedia.aiMasterJson.keywords.map((kw: string, i: number) => <span key={i} className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-400 rounded-md font-semibold">{kw}</span>)}</div></div>}
-                {selectedMedia.aiMasterJson.hashtags && <div><div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1.5 flex items-center gap-1"><Hash className="w-3 h-3" />Hashtags</div><div className="flex flex-wrap gap-1">{selectedMedia.aiMasterJson.hashtags.map((tag: string, i: number) => <span key={i} className="text-[10px] px-2 py-0.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 rounded-md font-semibold">{tag}</span>)}</div></div>}
               </div>
+              <CaptionEditor
+                media={selectedMedia}
+                onUpdated={(updated) => {
+                  setSelectedMedia(current => current?.id === updated.id ? { ...current, ...updated } : current);
+                  refetch();
+                }}
+              />
             </div>
           )}
           {selectedMedia.status === 'FAILED' && (

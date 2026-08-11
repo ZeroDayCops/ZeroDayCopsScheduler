@@ -2,8 +2,186 @@ const express = require('express');
 const prisma = require('../prisma');
 const { requireAuth } = require('../middleware/auth');
 const { renderPost } = require('../services/renderer');
+const { regenerateCaption, parseMasterJson } = require('../services/openrouter');
 
 const router = express.Router();
+
+async function getAccessibleMedia(req, res) {
+  const media = await prisma.media.findUnique({
+    where: { id: req.params.id },
+    include: { workspace: true },
+  });
+
+  if (!media) {
+    res.status(404).json({ error: 'Media not found' });
+    return null;
+  }
+
+  const membership = await prisma.membership.findUnique({
+    where: {
+      userId_organizationId: {
+        userId: req.userId,
+        organizationId: media.workspace.organizationId,
+      },
+    },
+  });
+
+  if (!membership) {
+    res.status(403).json({ error: 'No membership in this organization' });
+    return null;
+  }
+
+  if (membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
+    const access = await prisma.workspaceAccess.findUnique({
+      where: {
+        userId_workspaceId: {
+          userId: req.userId,
+          workspaceId: media.workspaceId,
+        },
+      },
+    });
+    if (!access) {
+      res.status(403).json({ error: 'No access to this workspace' });
+      return null;
+    }
+  }
+
+  return media;
+}
+
+async function refreshPendingPostSnapshots(media) {
+  const pendingPosts = await prisma.scheduledPost.findMany({
+    where: {
+      mediaId: media.id,
+      status: { in: ['PENDING', 'PENDING_REVIEW'] },
+    },
+    select: { id: true, platform: true },
+  });
+
+  const refreshedPostIds = [];
+  for (const post of pendingPosts) {
+    let template = await prisma.template.findFirst({
+      where: { workspaceId: media.workspaceId, platform: post.platform },
+    });
+    if (!template) {
+      template = await prisma.template.findFirst({
+        where: { workspaceId: null, platform: post.platform, isDefault: true },
+      });
+    }
+    if (!template) {
+      console.warn(`[CAPTION EDIT] Skipping ScheduledPost ${post.id}: no ${post.platform} template found.`);
+      continue;
+    }
+
+    const rendering = renderPost(media, media.workspace, template, post.platform);
+    if (rendering.error) {
+      console.warn(`[CAPTION EDIT] Skipping ScheduledPost ${post.id}: ${rendering.error}`);
+      continue;
+    }
+
+    await prisma.scheduledPost.update({
+      where: { id: post.id },
+      data: { renderedContent: rendering },
+    });
+    refreshedPostIds.push(post.id);
+  }
+
+  return refreshedPostIds;
+}
+
+/**
+ * POST /api/media/:id/regenerate-caption
+ * Refines the existing visual Master JSON with optional user-confirmed tags and notes.
+ */
+router.post('/:id/regenerate-caption', requireAuth, async (req, res) => {
+  try {
+    const { userTags = [], notes = '' } = req.body || {};
+    if (!Array.isArray(userTags) || userTags.some(tag => typeof tag !== 'string' || !tag.trim())) {
+      return res.status(400).json({ error: 'userTags must be an array of non-empty strings.' });
+    }
+    if (typeof notes !== 'string') {
+      return res.status(400).json({ error: 'notes must be a string.' });
+    }
+
+    const media = await getAccessibleMedia(req, res);
+    if (!media) return;
+    if (media.status !== 'ANALYZED' || !media.aiMasterJson) {
+      return res.status(400).json({ error: 'Media must have a completed analysis before its caption can be regenerated.' });
+    }
+
+    const aiMasterJson = await regenerateCaption(media, userTags.map(tag => tag.trim()), notes);
+    const updatedMedia = await prisma.media.update({
+      where: { id: media.id },
+      data: { aiMasterJson, status: 'ANALYZED' },
+    });
+    const refreshedPostIds = await refreshPendingPostSnapshots({ ...media, aiMasterJson });
+
+    res.json({
+      media: updatedMedia,
+      aiMasterJson,
+      refreshedPostIds,
+      refreshedPostCount: refreshedPostIds.length,
+    });
+  } catch (err) {
+    console.error('[CAPTION REGENERATE] Failed:', err.response?.data || err.message);
+    const status = err.message === 'OPENROUTER_API_KEY is not configured.' ? 503 : 500;
+    res.status(status).json({ error: status === 503 ? 'Caption generation provider is not configured.' : 'Caption regeneration failed.' });
+  }
+});
+
+/**
+ * PATCH /api/media/:id/caption
+ * Applies direct edits to supported Master JSON caption fields only.
+ */
+router.patch('/:id/caption', requireAuth, async (req, res) => {
+  try {
+    const editableFields = new Set(['headline', 'description', 'keywords', 'hashtags']);
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({ error: 'Caption update body must be an object.' });
+    }
+    const unknownFields = Object.keys(body).filter(field => !editableFields.has(field));
+    if (unknownFields.length > 0) {
+      return res.status(400).json({ error: `Unsupported caption fields: ${unknownFields.join(', ')}` });
+    }
+    if (Object.keys(body).length === 0) {
+      return res.status(400).json({ error: 'At least one caption field is required.' });
+    }
+    for (const field of ['headline', 'description']) {
+      if (field in body && (typeof body[field] !== 'string' || !body[field].trim())) {
+        return res.status(400).json({ error: `${field} must be a non-empty string.` });
+      }
+    }
+    for (const field of ['keywords', 'hashtags']) {
+      if (field in body && (!Array.isArray(body[field]) || body[field].some(value => typeof value !== 'string' || !value.trim()))) {
+        return res.status(400).json({ error: `${field} must be an array of non-empty strings.` });
+      }
+    }
+
+    const media = await getAccessibleMedia(req, res);
+    if (!media) return;
+    if (media.status !== 'ANALYZED' || !media.aiMasterJson) {
+      return res.status(400).json({ error: 'Media must have a completed analysis before its caption can be edited.' });
+    }
+
+    const aiMasterJson = parseMasterJson(JSON.stringify({ ...media.aiMasterJson, ...body }));
+    const updatedMedia = await prisma.media.update({
+      where: { id: media.id },
+      data: { aiMasterJson, status: 'ANALYZED' },
+    });
+    const refreshedPostIds = await refreshPendingPostSnapshots({ ...media, aiMasterJson });
+
+    res.json({
+      media: updatedMedia,
+      aiMasterJson,
+      refreshedPostIds,
+      refreshedPostCount: refreshedPostIds.length,
+    });
+  } catch (err) {
+    console.error('[CAPTION EDIT] Failed:', err.message);
+    res.status(500).json({ error: 'Caption update failed.' });
+  }
+});
 
 /**
  * GET /api/media/:id/preview

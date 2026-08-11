@@ -133,6 +133,128 @@ function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, wor
   };
 }
 
+const REQUIRED_MASTER_JSON_FIELDS = ['product', 'headline', 'description', 'keywords', 'hashtags'];
+const OPTIONAL_MASTER_JSON_FIELDS = ['mood', 'suggested_cta'];
+const MASTER_JSON_FIELDS = new Set([...REQUIRED_MASTER_JSON_FIELDS, ...OPTIONAL_MASTER_JSON_FIELDS]);
+
+function isConfiguredKey(value) {
+  return Boolean(value && value.trim() && !value.includes('your-'));
+}
+
+function parseMasterJson(rawText) {
+  if (typeof rawText !== 'string') {
+    throw new Error('AI response did not contain text JSON.');
+  }
+
+  const parsed = JSON.parse(rawText.replace(/```json\n?|\n?```/g, '').trim());
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('AI response must be a JSON object.');
+  }
+
+  const unknownFields = Object.keys(parsed).filter(field => !MASTER_JSON_FIELDS.has(field));
+  if (unknownFields.length > 0) {
+    throw new Error(`AI response contains unsupported Master JSON fields: ${unknownFields.join(', ')}`);
+  }
+
+  for (const field of REQUIRED_MASTER_JSON_FIELDS) {
+    if (!(field in parsed)) {
+      throw new Error(`AI response is missing required Master JSON field: ${field}`);
+    }
+  }
+
+  for (const field of ['product', 'headline', 'description']) {
+    if (typeof parsed[field] !== 'string' || !parsed[field].trim()) {
+      throw new Error(`AI response field ${field} must be a non-empty string.`);
+    }
+  }
+
+  for (const field of ['keywords', 'hashtags']) {
+    if (!Array.isArray(parsed[field]) || parsed[field].some(value => typeof value !== 'string')) {
+      throw new Error(`AI response field ${field} must be an array of strings.`);
+    }
+  }
+
+  for (const field of OPTIONAL_MASTER_JSON_FIELDS) {
+    if (field in parsed && typeof parsed[field] !== 'string') {
+      throw new Error(`AI response field ${field} must be a string when provided.`);
+    }
+  }
+
+  return parsed;
+}
+
+function masterJsonSchemaInstruction() {
+  return `Return ONLY valid JSON matching this exact schema. No markdown, no preamble, no explanation. Do not add fields:\n{
+  "product": "string",
+  "headline": "string",
+  "description": "string",
+  "keywords": ["string"],
+  "hashtags": ["#string"],
+  "mood": "string (optional)",
+  "suggested_cta": "string (optional)"
+}`;
+}
+
+async function requestOpenRouterJson({ model, prompt, imageBuffer, mimeType, timeout = 35000 }) {
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  if (!isConfiguredKey(openrouterKey)) {
+    throw new Error('OPENROUTER_API_KEY is not configured.');
+  }
+
+  const content = [{ type: 'text', text: prompt }];
+  if (imageBuffer) {
+    content.push({
+      type: 'image_url',
+      image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${imageBuffer.toString('base64')}` },
+    });
+  }
+
+  const request = async (messages) => axios.post(
+    'https://openrouter.ai/api/v1/chat/completions',
+    {
+      model,
+      messages,
+      response_format: { type: 'json_object' },
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${openrouterKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      timeout,
+    }
+  );
+
+  const initialResponse = await request([{ role: 'user', content }]);
+  const rawText = initialResponse.data?.choices?.[0]?.message?.content;
+  try {
+    return parseMasterJson(rawText);
+  } catch (parseError) {
+    const repairPrompt = `${masterJsonSchemaInstruction()}\n\nThe previous response was not valid JSON for this contract. Return only the corrected JSON. Previous response:\n${rawText || '(empty response)'}`;
+    const repairResponse = await request([{ role: 'user', content: repairPrompt }]);
+    return parseMasterJson(repairResponse.data?.choices?.[0]?.message?.content);
+  }
+}
+
+async function regenerateCaption(media, userTags = [], notes = '') {
+  const model = process.env.OPENROUTER_REFINEMENT_MODEL || 'openai/gpt-5.6-luna';
+  const existingMasterJson = parseMasterJson(JSON.stringify(media.aiMasterJson));
+  const tagsText = userTags.length
+    ? `The user has confirmed this content includes: ${userTags.join(', ')}. Reflect these hints accurately when supported by the existing visual facts.`
+    : 'The user has not supplied additional tags.';
+  const notesText = notes.trim() ? `Additional user notes: ${notes.trim()}` : 'No additional user notes were supplied.';
+  const prompt = `You are refining social-media copy for the brand "${media.workspace.brandName || 'the brand'}". The existing Master JSON was created from visual analysis and is the source of truth for the depicted facts. Preserve those facts; do not invent people, products, claims, or visual details. Rewrite headline, description, keywords, and hashtags to incorporate the confirmed user hints. Keep the existing product, mood, and suggested_cta unless a change is strictly necessary for consistency.\n\nExisting Master JSON:\n${JSON.stringify(existingMasterJson)}\n\n${tagsText}\n${notesText}\n\n${masterJsonSchemaInstruction()}`;
+
+  const refined = await requestOpenRouterJson({ model, prompt, timeout: 25000 });
+  // Keep vision-derived identity fields stable; this action is intentionally a caption refinement.
+  return parseMasterJson(JSON.stringify({
+    ...refined,
+    product: existingMasterJson.product,
+    ...(existingMasterJson.mood ? { mood: existingMasterJson.mood } : {}),
+    ...(existingMasterJson.suggested_cta ? { suggested_cta: existingMasterJson.suggested_cta } : {}),
+  }));
+}
+
 /**
  * Main Analysis Function
  */
@@ -268,16 +390,7 @@ QUALITY VALIDATION (self-check before returning):
 ✅ Description is approximately 300-350 characters
 If any condition fails, fix it before returning.
 
-Schema Requirements (return ONLY a single valid raw JSON object matching this exact Master JSON schema):
-{
-  "product": "Specific title identifying the exact subject/document/product",
-  "headline": "Punchy, specific hook in the brand voice — may include ${brand}",
-  "description": "2-3 sentence branded caption, approximately 300-350 characters max (to leave room for hashtags and CTA appended afterward). Must include the brand name naturally. Must end with a branded closing signature.",
-  "keywords": ["keyword1", "keyword2", "keyword3"],
-  "hashtags": ["#${brandClean}", "#SpecificTag1", "#SpecificTag2"],
-  "mood": "Visual vibe (e.g. authoritative, technical, executive, sleek)",
-  "suggested_cta": "Brand-reinforcing CTA including ${brand}"
-}`;
+Return a Master JSON with a specific product, headline, description, content-specific keywords and hashtags, plus optional mood and suggested CTA. The exact response contract follows below.`;
 
     if (brandDescription) {
       systemPrompt += `\n\nAdditional Brand Context:\n${brandDescription}`;
@@ -288,19 +401,72 @@ Schema Requirements (return ONLY a single valid raw JSON object matching this ex
 
     let resultJson = null;
     let isDegraded = false;
+    let imageBuffer = null;
+    let mimeType = 'image/jpeg';
 
-    // ─── Live Dynamic Gemini Model Resolution via ListModels ───
+    if (imageToAnalyze && fs.existsSync(imageToAnalyze)) {
+      imageBuffer = fs.readFileSync(imageToAnalyze);
+      mimeType = getMimeType(imageToAnalyze);
+    }
+
+    // ─── PROVIDER 1: GPT-5.6 Terra via OpenRouter (multimodal primary) ──
+    const openrouterKey = process.env.OPENROUTER_API_KEY;
+    const primaryOpenRouterModel = process.env.OPENROUTER_PRIMARY_MODEL || 'openai/gpt-5.6-terra';
+    if (!resultJson && isConfiguredKey(openrouterKey)) {
+      try {
+        console.log(`[AI ENGINE] Analyzing media ${mediaId} with ${primaryOpenRouterModel} via OpenRouter...`);
+        await prisma.media.update({
+          where: { id: mediaId },
+          data: { statusDetail: `Analyzing ${media.mediaType.toLowerCase()} with ${primaryOpenRouterModel}...` },
+        });
+        resultJson = await requestOpenRouterJson({
+          model: primaryOpenRouterModel,
+          prompt: `${systemPrompt}\n\n${masterJsonSchemaInstruction()}`,
+          imageBuffer,
+          mimeType,
+        });
+        console.log(`[AI ENGINE] ${primaryOpenRouterModel} analysis successful for media ${mediaId}`);
+      } catch (primaryErr) {
+        console.warn('[AI ENGINE] OpenRouter primary unavailable:', primaryErr.response?.data || primaryErr.message);
+      }
+    }
+
+    // ─── PROVIDER 2: Local Ollama (qwen2.5:1.5b) ────────────────────
+    if (!resultJson) {
+      try {
+        console.log(`[AI ENGINE] Attempting Local Ollama (qwen2.5:1.5b)...`);
+        await prisma.media.update({
+          where: { id: mediaId },
+          data: { statusDetail: 'Generating copy with Local Qwen AI...' },
+        });
+
+        const ollamaRes = await axios.post(
+          'http://127.0.0.1:11434/api/generate',
+          {
+            model: 'qwen2.5:1.5b',
+            prompt: `${systemPrompt}\n\n${masterJsonSchemaInstruction()}`,
+            stream: false,
+            format: 'json',
+          },
+          { timeout: 15000 }
+        );
+
+        resultJson = parseMasterJson(ollamaRes.data.response);
+        console.log(`[AI ENGINE] Ollama analysis successful for media ${mediaId}`);
+      } catch (ollamaErr) {
+        console.warn('[AI ENGINE] Ollama fallback unavailable:', ollamaErr.message);
+      }
+    }
+
+    // ─── PROVIDER 3: Google Gemini Vision API (fallback) ────────────
     const geminiKey = process.env.GEMINI_API_KEY;
     let geminiModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-
-    if (geminiKey && geminiKey.trim() && !geminiKey.includes('your-')) {
+    if (!resultJson && isConfiguredKey(geminiKey)) {
       try {
         const modelsRes = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey.trim()}`, { timeout: 10000 });
         const availableNames = (modelsRes.data.models || [])
           .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
           .map(m => m.name.replace('models/', ''));
-        
-        // Pick preferred active vision model from available list
         const preferredModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
         const resolved = preferredModels.find(p => availableNames.includes(p)) || availableNames.find(n => n.includes('flash'));
         if (resolved) {
@@ -310,24 +476,13 @@ Schema Requirements (return ONLY a single valid raw JSON object matching this ex
       } catch (listErr) {
         console.warn('[AI ENGINE] Failed to fetch live ListModels list, using configured default:', geminiModel, listErr.message);
       }
-    }
 
-    // ─── PROVIDER 1: Google Gemini Vision API ───────────────────────
-    if (!resultJson && geminiKey && geminiKey.trim() && !geminiKey.includes('your-')) {
       try {
-        console.log(`[AI ENGINE] Analyzing media ${mediaId} with Google Gemini (${geminiModel})...`);
+        console.log(`[AI ENGINE] Falling back to Google Gemini Vision (${geminiModel})...`);
         await prisma.media.update({
           where: { id: mediaId },
           data: { statusDetail: `Analyzing image with Gemini Vision AI (${geminiModel})...` },
         });
-
-        let imageBuffer = null;
-        let mimeType = 'image/jpeg';
-
-        if (imageToAnalyze && fs.existsSync(imageToAnalyze)) {
-          imageBuffer = fs.readFileSync(imageToAnalyze);
-          mimeType = getMimeType(imageToAnalyze);
-        }
 
         const parts = [{ text: systemPrompt }];
         if (imageBuffer) {
@@ -349,66 +504,10 @@ Schema Requirements (return ONLY a single valid raw JSON object matching this ex
         );
 
         const rawText = geminiRes.data.candidates[0].content.parts[0].text;
-        resultJson = JSON.parse(rawText.replace(/```json\n?|\n?```/g, '').trim());
+        resultJson = parseMasterJson(rawText);
         console.log(`[AI ENGINE] Gemini Vision analysis successful for media ${mediaId}`);
       } catch (err) {
         console.warn('[AI ENGINE] Gemini Vision API failed:', err.response?.data || err.message);
-      }
-    }
-
-    // ─── PROVIDER 2: Local Ollama (qwen2.5:1.5b) ────────────────────
-    if (!resultJson) {
-      try {
-        console.log(`[AI ENGINE] Attempting Local Ollama (qwen2.5:1.5b)...`);
-        await prisma.media.update({
-          where: { id: mediaId },
-          data: { statusDetail: 'Generating copy with Local Qwen AI...' },
-        });
-
-        const ollamaRes = await axios.post(
-          'http://127.0.0.1:11434/api/generate',
-          {
-            model: 'qwen2.5:1.5b',
-            prompt: systemPrompt,
-            stream: false,
-            format: 'json',
-          },
-          { timeout: 15000 }
-        );
-
-        resultJson = JSON.parse(ollamaRes.data.response);
-        console.log(`[AI ENGINE] Ollama analysis successful for media ${mediaId}`);
-      } catch (ollamaErr) {
-        console.warn('[AI ENGINE] Ollama fallback unavailable:', ollamaErr.message);
-      }
-    }
-
-    // ─── PROVIDER 3: OpenRouter API Fallback ────────────────────────
-    const openrouterKey = process.env.OPENROUTER_API_KEY;
-    if (!resultJson && openrouterKey && openrouterKey.trim() && !openrouterKey.includes('your-')) {
-      try {
-        console.log(`[AI ENGINE] Attempting OpenRouter API fallback...`);
-        const model = process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash';
-        const orRes = await axios.post(
-          'https://openrouter.ai/api/v1/chat/completions',
-          {
-            model,
-            messages: [{ role: 'user', content: systemPrompt }],
-            response_format: { type: 'json_object' },
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${openrouterKey.trim()}`,
-              'Content-Type': 'application/json',
-            },
-            timeout: 20000,
-          }
-        );
-
-        resultJson = JSON.parse(orRes.data.choices[0].message.content);
-        console.log(`[AI ENGINE] OpenRouter analysis successful for media ${mediaId}`);
-      } catch (orErr) {
-        console.warn('[AI ENGINE] OpenRouter API fallback failed:', orErr.message);
       }
     }
 
@@ -502,4 +601,10 @@ async function checkBatchCompletion(batchId) {
   }
 }
 
-module.exports = { analyzeMedia, checkBatchCompletion };
+module.exports = {
+  analyzeMedia,
+  checkBatchCompletion,
+  regenerateCaption,
+  parseMasterJson,
+  MASTER_JSON_FIELDS,
+};
