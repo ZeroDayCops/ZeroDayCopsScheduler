@@ -195,6 +195,54 @@ function masterJsonSchemaInstruction() {
 }`;
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DIRECT OPENAI API — Tier 0 Primary Provider
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function requestOpenAIJson({ model, prompt, imageBuffer, mimeType, timeout = 45000 }) {
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!isConfiguredKey(openaiKey)) {
+    throw new Error('OPENAI_API_KEY is not configured.');
+  }
+
+  const content = [{ type: 'text', text: prompt }];
+  if (imageBuffer) {
+    content.push({
+      type: 'image_url',
+      image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${imageBuffer.toString('base64')}` },
+    });
+  }
+
+  const request = async (messages) => axios.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      model,
+      messages,
+      response_format: { type: 'json_object' },
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${openaiKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      timeout,
+    }
+  );
+
+  const initialResponse = await request([{ role: 'user', content }]);
+  const rawText = initialResponse.data?.choices?.[0]?.message?.content;
+  try {
+    return parseMasterJson(rawText);
+  } catch (parseError) {
+    // Self-repair: ask the model to fix its own JSON
+    const repairPrompt = `${masterJsonSchemaInstruction()}\n\nThe previous response was not valid JSON for this contract. Return only the corrected JSON. Previous response:\n${rawText || '(empty response)'}`;
+    const repairResponse = await request([{ role: 'user', content: repairPrompt }]);
+    return parseMasterJson(repairResponse.data?.choices?.[0]?.message?.content);
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// OPENROUTER API — Tier 1 Fallback
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function requestOpenRouterJson({ model, prompt, imageBuffer, mimeType, timeout = 35000 }) {
   const openrouterKey = process.env.OPENROUTER_API_KEY;
   if (!isConfiguredKey(openrouterKey)) {
@@ -237,7 +285,6 @@ async function requestOpenRouterJson({ model, prompt, imageBuffer, mimeType, tim
 }
 
 async function regenerateCaption(media, userTags = [], notes = '') {
-  const model = process.env.OPENROUTER_REFINEMENT_MODEL || 'openai/gpt-5.6-luna';
   const existingMasterJson = parseMasterJson(JSON.stringify(media.aiMasterJson));
   const tagsText = userTags.length
     ? `The user has confirmed this content includes: ${userTags.join(', ')}. Reflect these hints accurately when supported by the existing visual facts.`
@@ -245,7 +292,20 @@ async function regenerateCaption(media, userTags = [], notes = '') {
   const notesText = notes.trim() ? `Additional user notes: ${notes.trim()}` : 'No additional user notes were supplied.';
   const prompt = `You are refining social-media copy for the brand "${media.workspace.brandName || 'the brand'}". The existing Master JSON was created from visual analysis and is the source of truth for the depicted facts. Preserve those facts; do not invent people, products, claims, or visual details. Rewrite headline, description, keywords, and hashtags to incorporate the confirmed user hints. Keep the existing product, mood, and suggested_cta unless a change is strictly necessary for consistency.\n\nExisting Master JSON:\n${JSON.stringify(existingMasterJson)}\n\n${tagsText}\n${notesText}\n\n${masterJsonSchemaInstruction()}`;
 
-  const refined = await requestOpenRouterJson({ model, prompt, timeout: 25000 });
+  // Prefer OpenAI direct → OpenRouter fallback for refinement
+  let refined;
+  if (isConfiguredKey(process.env.OPENAI_API_KEY)) {
+    const model = process.env.OPENAI_REFINEMENT_MODEL || 'gpt-4o-mini';
+    console.log(`[AI ENGINE] Caption refinement via OpenAI (${model})...`);
+    refined = await requestOpenAIJson({ model, prompt, timeout: 25000 });
+  } else if (isConfiguredKey(process.env.OPENROUTER_API_KEY)) {
+    const model = process.env.OPENROUTER_REFINEMENT_MODEL || 'openai/gpt-5.6-luna';
+    console.log(`[AI ENGINE] Caption refinement via OpenRouter (${model})...`);
+    refined = await requestOpenRouterJson({ model, prompt, timeout: 25000 });
+  } else {
+    throw new Error('No API key configured for caption refinement. Set OPENAI_API_KEY or OPENROUTER_API_KEY.');
+  }
+
   // Keep vision-derived identity fields stable; this action is intentionally a caption refinement.
   return parseMasterJson(JSON.stringify({
     ...refined,
@@ -409,7 +469,29 @@ Return a Master JSON with a specific product, headline, description, content-spe
       mimeType = getMimeType(imageToAnalyze);
     }
 
-    // ─── PROVIDER 1: GPT-5.6 Terra via OpenRouter (multimodal primary) ──
+    // ─── PROVIDER 0: ChatGPT Direct via OpenAI API (TOP TIER) ────────
+    const openaiKey = process.env.OPENAI_API_KEY;
+    const primaryOpenAIModel = process.env.OPENAI_MODEL || 'gpt-4o';
+    if (!resultJson && isConfiguredKey(openaiKey)) {
+      try {
+        console.log(`[AI ENGINE] 🔥 Analyzing media ${mediaId} with ${primaryOpenAIModel} via OpenAI Direct...`);
+        await prisma.media.update({
+          where: { id: mediaId },
+          data: { statusDetail: `Analyzing ${media.mediaType.toLowerCase()} with ChatGPT ${primaryOpenAIModel}...` },
+        });
+        resultJson = await requestOpenAIJson({
+          model: primaryOpenAIModel,
+          prompt: `${systemPrompt}\n\n${masterJsonSchemaInstruction()}`,
+          imageBuffer,
+          mimeType,
+        });
+        console.log(`[AI ENGINE] ✅ ChatGPT ${primaryOpenAIModel} analysis successful for media ${mediaId}`);
+      } catch (openaiErr) {
+        console.warn('[AI ENGINE] OpenAI direct unavailable:', openaiErr.response?.data || openaiErr.message);
+      }
+    }
+
+    // ─── PROVIDER 1: OpenRouter Fallback (multimodal) ────────────────
     const openrouterKey = process.env.OPENROUTER_API_KEY;
     const primaryOpenRouterModel = process.env.OPENROUTER_PRIMARY_MODEL || 'openai/gpt-5.6-terra';
     if (!resultJson && isConfiguredKey(openrouterKey)) {
@@ -431,7 +513,7 @@ Return a Master JSON with a specific product, headline, description, content-spe
       }
     }
 
-    // ─── PROVIDER 2: Local Ollama (qwen2.5:1.5b) ────────────────────
+    // ─── PROVIDER 2: Local Ollama (qwen2.5:1.5b) ─────────────────────
     if (!resultJson) {
       try {
         console.log(`[AI ENGINE] Attempting Local Ollama (qwen2.5:1.5b)...`);
@@ -458,7 +540,7 @@ Return a Master JSON with a specific product, headline, description, content-spe
       }
     }
 
-    // ─── PROVIDER 3: Google Gemini Vision API (fallback) ────────────
+    // ─── PROVIDER 3: Google Gemini Vision API (fallback) ─────────────
     const geminiKey = process.env.GEMINI_API_KEY;
     let geminiModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     if (!resultJson && isConfiguredKey(geminiKey)) {
@@ -511,7 +593,7 @@ Return a Master JSON with a specific product, headline, description, content-spe
       }
     }
 
-    // ─── PROVIDER 4: Dynamic Generator (Degraded Fallback) ──────────
+    // ─── PROVIDER 4: Dynamic Generator (Degraded Fallback) ───────────
     if (!resultJson || !resultJson.product || !resultJson.headline || !resultJson.description) {
       console.warn(`[AI ENGINE] All AI vision providers failed for media ${mediaId}. Falling through to degraded dynamic generator.`);
       isDegraded = true;
