@@ -41,6 +41,7 @@ export const SettingsView: React.FC = () => {
   const [cta, setCta] = useState('');
   const [brandVoice, setBrandVoice] = useState('');
   const [brandDescription, setBrandDescription] = useState('');
+  const [contactInfoBlock, setContactInfoBlock] = useState('');
   const [emojiStyle, setEmojiStyle] = useState('moderate');
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [newHashtag, setNewHashtag] = useState('');
@@ -50,6 +51,10 @@ export const SettingsView: React.FC = () => {
   const [allowVideoImageFallback, setAllowVideoImageFallback] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Per-platform AI style guides state
+  const [styleGuides, setStyleGuides] = useState<{ LINKEDIN: string; PINTEREST: string; YOUTUBE: string }>({ LINKEDIN: '', PINTEREST: '', YOUTUBE: '' });
+  const [savingStyleGuide, setSavingStyleGuide] = useState<Record<string, boolean>>({});
 
   // Disconnect target dialog
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
@@ -68,12 +73,27 @@ export const SettingsView: React.FC = () => {
     setCta(currentWorkspace.cta || '');
     setBrandVoice(currentWorkspace.brandVoice || '');
     setBrandDescription(currentWorkspace.brandDescription || '');
+    setContactInfoBlock(currentWorkspace.contactInfoBlock || '');
     setEmojiStyle(currentWorkspace.emojiStyle || 'moderate');
     setHashtags(currentWorkspace.defaultHashtags || []);
     setAutomationMode(currentWorkspace.automationMode || 'MANUAL');
     setDefaultSlotTime(currentWorkspace.defaultSlotTime || '20:00');
     setTimezone(currentWorkspace.timezone || 'Asia/Kolkata');
     setAllowVideoImageFallback(!!currentWorkspace.allowVideoImageFallback);
+  }, [currentWorkspace?.id]);
+
+  // Fetch per-platform style guides
+  useEffect(() => {
+    if (!currentWorkspace?.id) return;
+    fetchApi<{ styleGuides: Record<string, string | null> }>(`/workspaces/${currentWorkspace.id}/style-guides`)
+      .then(d => {
+        setStyleGuides({
+          LINKEDIN: d.styleGuides.LINKEDIN || '',
+          PINTEREST: d.styleGuides.PINTEREST || '',
+          YOUTUBE: d.styleGuides.YOUTUBE || '',
+        });
+      })
+      .catch(() => {});
   }, [currentWorkspace?.id]);
 
   // Check URL query parameters for connection outcome messages
@@ -119,7 +139,7 @@ export const SettingsView: React.FC = () => {
     try {
       const res = await fetchApi<{ workspace: any }>(`/workspaces/${currentWorkspace.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ brandName, website, cta, defaultHashtags: hashtags, brandVoice, brandDescription, emojiStyle, automationMode, defaultSlotTime, timezone }),
+        body: JSON.stringify({ brandName, website, cta, defaultHashtags: hashtags, brandVoice, brandDescription, contactInfoBlock, emojiStyle, automationMode, defaultSlotTime, timezone, allowVideoImageFallback }),
       });
       setCurrentWorkspace(res.workspace);
       queryClient.invalidateQueries({ queryKey: ['workspace', currentWorkspace.id] });
@@ -128,6 +148,22 @@ export const SettingsView: React.FC = () => {
       setToast({ type: 'error', message: err.message || 'Failed to save workspace settings' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveStyleGuide = async (platform: 'LINKEDIN' | 'PINTEREST' | 'YOUTUBE') => {
+    if (!currentWorkspace?.id) return;
+    setSavingStyleGuide(prev => ({ ...prev, [platform]: true }));
+    try {
+      await fetchApi(`/workspaces/${currentWorkspace.id}/style-guides/${platform}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ aiStyleGuide: styleGuides[platform] }),
+      });
+      setToast({ type: 'success', message: `${PLATFORM_NAMES[platform]} style guide saved!` });
+    } catch (err: any) {
+      setToast({ type: 'error', message: err.message || `Failed to save ${PLATFORM_NAMES[platform]} style guide` });
+    } finally {
+      setSavingStyleGuide(prev => ({ ...prev, [platform]: false }));
     }
   };
 
@@ -218,8 +254,13 @@ export const SettingsView: React.FC = () => {
               className="w-full px-3.5 py-2.5 bg-[#080d16] border border-white/5 rounded-xl text-slate-200 text-sm resize-none focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" />
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Brand Description (Gemini AI Context)</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Brand Description (AI Context)</label>
             <textarea value={brandDescription} onChange={e => setBrandDescription(e.target.value)} rows={3} placeholder="Detailed brand background, target audience, core values, products..."
+              className="w-full px-3.5 py-2.5 bg-[#080d16] border border-white/5 rounded-xl text-slate-200 text-sm resize-none focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Contact & Location Info Block (Render-Time Only)</label>
+            <textarea value={contactInfoBlock} onChange={e => setContactInfoBlock(e.target.value)} rows={3} placeholder="Fixed address, store hours, contact phone numbers... (Substituted into {{contactBlock}} at render time, AI never sees this text)"
               className="w-full px-3.5 py-2.5 bg-[#080d16] border border-white/5 rounded-xl text-slate-200 text-sm resize-none focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" />
           </div>
           <div>
@@ -291,6 +332,60 @@ export const SettingsView: React.FC = () => {
           })}
         </Card>
       </div>
+
+      {/* AI Caption Style Guides */}
+      <Card className="p-6 space-y-5">
+        <div>
+          <h2 className="text-base font-bold text-slate-200 flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-indigo-400" />
+            AI Caption Style Guides (Per Platform)
+          </h2>
+          <p className="text-slate-400 text-xs mt-1">
+            Configure optional per-platform style rules. When set, the single AI vision call will generate tailored platform variants alongside the generic Master JSON.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {(['LINKEDIN', 'PINTEREST', 'YOUTUBE'] as const).map(platform => {
+            const placeholders: Record<string, string> = {
+              LINKEDIN: 'E.g., "Use professional B2B tone with 2 bullet points highlighting craftsmanship and heritage."',
+              PINTEREST: 'E.g., "Concise visual discovery hook focusing on aesthetic details, max 200 chars."',
+              YOUTUBE: 'E.g., "Engaging video intro description encouraging subscribers and comments."',
+            };
+
+            return (
+              <div key={platform} className="border border-white/5 rounded-2xl p-4 bg-[#080d16]/50 space-y-3 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className={`text-xs font-extrabold uppercase tracking-wider ${PLATFORM_COLORS[platform]}`}>
+                      {PLATFORM_NAMES[platform]} Style Guide
+                    </span>
+                    {styleGuides[platform] && (
+                      <span className="text-[10px] bg-indigo-500/10 text-indigo-300 px-2 py-0.5 rounded-md font-bold">Active</span>
+                    )}
+                  </div>
+                  <textarea
+                    value={styleGuides[platform]}
+                    onChange={e => setStyleGuides({ ...styleGuides, [platform]: e.target.value })}
+                    rows={4}
+                    placeholder={placeholders[platform]}
+                    className="w-full px-3 py-2 bg-[#070a13] border border-white/5 rounded-xl text-slate-200 text-xs resize-none focus:outline-none focus:border-indigo-500 transition"
+                  />
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full"
+                  isLoading={savingStyleGuide[platform]}
+                  onClick={() => handleSaveStyleGuide(platform)}
+                >
+                  Save {PLATFORM_NAMES[platform]} Guide
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
 
       {/* Automation Rules */}
       <Card className="p-6 space-y-5">

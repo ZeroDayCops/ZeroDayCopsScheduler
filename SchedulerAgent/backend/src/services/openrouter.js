@@ -134,7 +134,7 @@ function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, wor
 }
 
 const REQUIRED_MASTER_JSON_FIELDS = ['product', 'headline', 'description', 'keywords', 'hashtags'];
-const OPTIONAL_MASTER_JSON_FIELDS = ['mood', 'suggested_cta'];
+const OPTIONAL_MASTER_JSON_FIELDS = ['mood', 'suggested_cta', 'platform_variants'];
 const MASTER_JSON_FIELDS = new Set([...REQUIRED_MASTER_JSON_FIELDS, ...OPTIONAL_MASTER_JSON_FIELDS]);
 
 function isConfiguredKey(value) {
@@ -174,25 +174,45 @@ function parseMasterJson(rawText) {
     }
   }
 
-  for (const field of OPTIONAL_MASTER_JSON_FIELDS) {
-    if (field in parsed && typeof parsed[field] !== 'string') {
+  for (const field of ['mood', 'suggested_cta']) {
+    if (field in parsed && parsed[field] !== null && typeof parsed[field] !== 'string') {
       throw new Error(`AI response field ${field} must be a string when provided.`);
+    }
+  }
+
+  if ('platform_variants' in parsed && parsed.platform_variants !== null && parsed.platform_variants !== undefined) {
+    if (typeof parsed.platform_variants !== 'object' || Array.isArray(parsed.platform_variants)) {
+      throw new Error('AI response field platform_variants must be an object when provided.');
+    }
+    const validPlatforms = new Set(['LINKEDIN', 'PINTEREST', 'YOUTUBE']);
+    for (const [key, val] of Object.entries(parsed.platform_variants)) {
+      if (!validPlatforms.has(key)) {
+        throw new Error(`Invalid platform key in platform_variants: ${key}`);
+      }
+      if (!val || typeof val !== 'object' || Array.isArray(val)) {
+        throw new Error(`platform_variants.${key} must be an object.`);
+      }
+      for (const subKey of Object.keys(val)) {
+        if (subKey !== 'headline' && subKey !== 'description') {
+          throw new Error(`Unsupported field platform_variants.${key}.${subKey}`);
+        }
+        if (typeof val[subKey] !== 'string') {
+          throw new Error(`platform_variants.${key}.${subKey} must be a string.`);
+        }
+      }
     }
   }
 
   return parsed;
 }
 
-function masterJsonSchemaInstruction() {
-  return `Return ONLY valid JSON matching this exact schema. No markdown, no preamble, no explanation. Do not add fields:\n{
-  "product": "string",
-  "headline": "string",
-  "description": "string",
-  "keywords": ["string"],
-  "hashtags": ["#string"],
-  "mood": "string (optional)",
-  "suggested_cta": "string (optional)"
-}`;
+function masterJsonSchemaInstruction(configuredPlatforms = []) {
+  if (configuredPlatforms && configuredPlatforms.length > 0) {
+    const platformFields = configuredPlatforms.map(p => `    "${p}": { "headline": "string (optional)", "description": "string (optional)" }`).join(',\n');
+    return `Return ONLY valid JSON matching this exact schema. No markdown, no preamble, no explanation. Do not add fields:\n{\n  "product": "string",\n  "headline": "string",\n  "description": "string",\n  "keywords": ["string"],\n  "hashtags": ["#string"],\n  "mood": "string (optional)",\n  "suggested_cta": "string (optional)",\n  "platform_variants": {\n${platformFields}\n  }\n}`;
+  }
+
+  return `Return ONLY valid JSON matching this exact schema. No markdown, no preamble, no explanation. Do not add fields:\n{\n  "product": "string",\n  "headline": "string",\n  "description": "string",\n  "keywords": ["string"],\n  "hashtags": ["#string"],\n  "mood": "string (optional)",\n  "suggested_cta": "string (optional)"\n}`;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -412,6 +432,27 @@ async function analyzeMedia(mediaId) {
     const brandClean = (media.workspace.brandName || 'Brand').replace(/\s+/g, '');
     const wsWebsite = media.workspace.website || '';
 
+    // Query per-platform AI style guides for workspace
+    let styleGuidesText = '';
+    const configuredPlatforms = [];
+    try {
+      const styleGuideTemplates = await prisma.template.findMany({
+        where: { workspaceId: media.workspaceId, aiStyleGuide: { not: null } },
+      });
+      const validTemplates = styleGuideTemplates.filter(t => t.aiStyleGuide && t.aiStyleGuide.trim());
+      if (validTemplates.length > 0) {
+        styleGuidesText = '\n\nPLATFORM-SPECIFIC VARIANTS & STYLE GUIDES (MANDATORY WHEN CONFIGURED):\n' +
+          'In addition to the generic headline and description, you MUST provide platform-specific headline and description overrides under "platform_variants" for ONLY the following platforms:\n' +
+          validTemplates.map(t => {
+            configuredPlatforms.push(t.platform);
+            return `- ${t.platform}: ${t.aiStyleGuide.trim()}`;
+          }).join('\n') +
+          '\nDo NOT generate platform_variants for any platforms not listed above.';
+      }
+    } catch (sgErr) {
+      console.warn('[AI ENGINE] Failed to fetch workspace style guides:', sgErr.message);
+    }
+
     let systemPrompt = `You are the official marketing team for "${brand}". You write every caption, description, and title AS the brand — never as an anonymous content generator.
 ANALYZE THE ATTACHED IMAGE OR VIDEO FRAME IN DETAIL.
 
@@ -419,6 +460,9 @@ PRIMARY SUBJECT & TEXT EXTRACTION RULES:
 1. DOCUMENT & TEXT FIRST: Any visible text, certificates, awards, logos, screens, product labels, documents, or signage are the PRIMARY subject of the image. Read, transcribe key details, and base the caption entirely around what that text/logo actually represents (e.g. vulnerability disclosure recognition, security award, specific product line).
 2. SECONDARY COLOR ONLY: Physical background details (e.g., clothing color, floor patterns, wall textures, furniture) are strictly secondary. Include them ONLY if they genuinely enhance the story — never lead with them or treat them as the main story.
 3. NO GENERIC AI FILLER: Do NOT use stock celebratory phrases or generic AI filler like "proudly presents", "inspiring moment", "significant achievement", "celebrating a stellar achievement", "unwavering dedication", or "future leaders" unless the text explicitly supports it. Write specific, grounded, authentic copy.
+
+GARMENT & ATTIRE RECOGNITION (ETHNIC WEAR):
+- Actively analyze and identify specific ethnic-wear garment types from the image directly (e.g. Sherwani, Jodhpuri Suit, Indo-Western, Kurta Pajama, Bandhgala, Nehru Jacket, Tuxedo, Lehenga, Saree) rather than generic terms like "outfit", "clothing", or "apparel". Use precise fashion terminology in headlines and copy.
 
 BRAND IDENTITY RULES (MANDATORY):
 - The brand name "${brand}" should appear AT MOST ONCE across the headline and description combined. One natural mention is ideal — do NOT repeat it multiple times.
@@ -438,9 +482,9 @@ ${media.workspace.cta ? `- PRIMARY RULE: Use the workspace CTA "${media.workspac
 
 HASHTAG RULES:
 - The FIRST hashtag MUST always be the brand hashtag: #${brandClean}
-- Then generate 2 to 4 additional highly specific, content-driven hashtags based strictly on what is depicted.
-- STRICT PROHIBITION: Do NOT include generic filler hashtags like #Achievement, #Recognition, #Innovation, #ProudMoment, #Success, or #Milestone.
-- Do NOT include default workspace hashtags (${(media.workspace.defaultHashtags || []).join(', ')}) — those will be appended automatically.
+- PRIMARY SET: Actively prefer and lead with the workspace's configured default hashtags (${(media.workspace.defaultHashtags || []).join(', ')}) as the core set.
+- Fill out any remaining slots (up to 5 total hashtags) with highly specific content-driven hashtags based strictly on what is depicted.
+- If the workspace has no default hashtags configured, generate 3 to 5 content-driven hashtags strictly based on what is depicted.
 
 QUALITY VALIDATION (self-check before returning):
 ✅ Brand name "${brand}" appears at most once across headline + description combined
@@ -458,6 +502,9 @@ Return a Master JSON with a specific product, headline, description, content-spe
     if (historicalExamplesText) {
       systemPrompt += `\n${historicalExamplesText}`;
     }
+    if (styleGuidesText) {
+      systemPrompt += styleGuidesText;
+    }
 
     let resultJson = null;
     let isDegraded = false;
@@ -468,6 +515,8 @@ Return a Master JSON with a specific product, headline, description, content-spe
       imageBuffer = fs.readFileSync(imageToAnalyze);
       mimeType = getMimeType(imageToAnalyze);
     }
+
+    const schemaInstruction = masterJsonSchemaInstruction(configuredPlatforms);
 
     // ─── PROVIDER 0: ChatGPT Direct via OpenAI API (TOP TIER) ────────
     const openaiKey = process.env.OPENAI_API_KEY;
@@ -481,7 +530,7 @@ Return a Master JSON with a specific product, headline, description, content-spe
         });
         resultJson = await requestOpenAIJson({
           model: primaryOpenAIModel,
-          prompt: `${systemPrompt}\n\n${masterJsonSchemaInstruction()}`,
+          prompt: `${systemPrompt}\n\n${schemaInstruction}`,
           imageBuffer,
           mimeType,
         });
@@ -503,7 +552,7 @@ Return a Master JSON with a specific product, headline, description, content-spe
         });
         resultJson = await requestOpenRouterJson({
           model: primaryOpenRouterModel,
-          prompt: `${systemPrompt}\n\n${masterJsonSchemaInstruction()}`,
+          prompt: `${systemPrompt}\n\n${schemaInstruction}`,
           imageBuffer,
           mimeType,
         });
@@ -526,7 +575,7 @@ Return a Master JSON with a specific product, headline, description, content-spe
           'http://127.0.0.1:11434/api/generate',
           {
             model: 'qwen2.5:1.5b',
-            prompt: `${systemPrompt}\n\n${masterJsonSchemaInstruction()}`,
+            prompt: `${systemPrompt}\n\n${schemaInstruction}`,
             stream: false,
             format: 'json',
           },

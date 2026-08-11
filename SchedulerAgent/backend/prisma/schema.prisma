@@ -104,6 +104,7 @@ model Workspace {
   defaultHashtags         String[]
   brandVoice              String?
   brandDescription        String?
+  contactInfoBlock        String?
   emojiStyle              String?
   automationMode          AutomationMode    @default(MANUAL)
   defaultSlotTime         String            @default("20:00")
@@ -186,6 +187,7 @@ model Template {
   platform     Platform
   name         String
   templateBody String
+  aiStyleGuide String?
   isDefault    Boolean    @default(false)
   workspace    Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }

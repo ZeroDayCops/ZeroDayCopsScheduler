@@ -2,22 +2,13 @@ const prisma = require('../prisma');
 
 async function seedDefaultTemplates() {
   try {
-    const defaultTemplatesCount = await prisma.template.count({
-      where: { isDefault: true, workspaceId: null },
-    });
-
-    if (defaultTemplatesCount >= 3) {
-      console.log('Default templates already seeded.');
-      return;
-    }
-
     console.log('Seeding default templates...');
 
     const defaults = [
       {
         platform: 'LINKEDIN',
         name: 'LinkedIn Default Template',
-        templateBody: '{{headline}}\n\n{{description}}\n\n{{hashtags}}\n\n{{cta}}',
+        templateBody: '{{headline}}\n\n{{description}}\n\n{{cta}}\n\n{{contactBlock}}\n\n{{hashtags}}',
         isDefault: true,
       },
       {
@@ -29,7 +20,7 @@ async function seedDefaultTemplates() {
       {
         platform: 'YOUTUBE',
         name: 'YouTube Default Template',
-        templateBody: '{{headline}}\n\n{{description}}\n\n{{cta}}\n\n{{hashtags}}',
+        templateBody: '{{headline}}\n\n{{description}}\n\n{{cta}}\n\n{{contactBlock}}\n\n{{hashtags}}',
         isDefault: true,
       },
     ];
@@ -37,9 +28,11 @@ async function seedDefaultTemplates() {
     for (const item of defaults) {
       await prisma.template.upsert({
         where: {
-          id: `default-${item.platform.toLowerCase()}`, // Use static ID or check by platform
+          id: `default-${item.platform.toLowerCase()}`,
         },
-        update: {},
+        update: {
+          templateBody: item.templateBody,
+        },
         create: {
           id: `default-${item.platform.toLowerCase()}`,
           workspaceId: null,

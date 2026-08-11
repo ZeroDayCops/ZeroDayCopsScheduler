@@ -42,7 +42,8 @@ function substituteTemplate(templateBody, data) {
     .replace(/\{\{headline\}\}/g, data.headline || '')
     .replace(/\{\{description\}\}/g, data.description || '')
     .replace(/\{\{hashtags\}\}/g, data.hashtags || '')
-    .replace(/\{\{cta\}\}/g, data.cta || '');
+    .replace(/\{\{cta\}\}/g, data.cta || '')
+    .replace(/\{\{contactBlock\}\}/g, data.contactBlock || '');
 }
 
 /**
@@ -64,10 +65,12 @@ function renderPost(media, workspace, template, platform) {
 
   const aiJson = media.aiMasterJson || {};
   
-  // Resolve values
-  const headline = aiJson.headline || '';
-  const description = aiJson.description || '';
+  // Resolve values — prefer platform-specific variant when present
+  const variants = aiJson.platform_variants?.[platform] || {};
+  const headline = variants.headline || aiJson.headline || '';
+  const description = variants.description || aiJson.description || '';
   const cta = aiJson.suggested_cta || workspace.cta || '';
+  const contactBlock = workspace.contactInfoBlock || '';
   
   // Format and merge hashtags
   const aiHashtags = aiJson.hashtags || [];
@@ -80,6 +83,7 @@ function renderPost(media, workspace, template, platform) {
     headline,
     description,
     cta,
+    contactBlock,
     hashtags: hashtagsString,
   });
 
@@ -103,6 +107,7 @@ function renderPost(media, workspace, template, platform) {
         headline,
         description,
         cta,
+        contactBlock,
         hashtags: truncatedHashtagsString,
       });
       if (!template.templateBody.includes('{{hashtags}}') && truncatedHashtagsString) {
@@ -133,6 +138,7 @@ function renderPost(media, workspace, template, platform) {
       headline,
       description,
       cta,
+      contactBlock,
       hashtags: '',
     }).trim();
 

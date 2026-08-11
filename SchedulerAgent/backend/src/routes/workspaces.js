@@ -206,7 +206,7 @@ router.get('/:id', requireAuth, requireWorkspaceAccess, async (req, res) => {
 router.put('/:id', requireAuth, requireWorkspaceAccess, async (req, res) => {
   try {
     const workspaceId = req.params.id;
-    const { brandName, website, cta, defaultHashtags, brandVoice, brandDescription, emojiStyle, automationMode, defaultSlotTime, timezone, allowVideoImageFallback } = req.body;
+    const { brandName, website, cta, defaultHashtags, brandVoice, brandDescription, contactInfoBlock, emojiStyle, automationMode, defaultSlotTime, timezone, allowVideoImageFallback } = req.body;
 
     // Additional security: Only OWNER/ADMIN membership role in workspace's organization
     const membership = await prisma.membership.findUnique({
@@ -230,6 +230,7 @@ router.put('/:id', requireAuth, requireWorkspaceAccess, async (req, res) => {
     if (defaultHashtags !== undefined) updateData.defaultHashtags = defaultHashtags;
     if (brandVoice !== undefined) updateData.brandVoice = brandVoice;
     if (brandDescription !== undefined) updateData.brandDescription = brandDescription;
+    if (contactInfoBlock !== undefined) updateData.contactInfoBlock = contactInfoBlock;
     if (emojiStyle !== undefined) updateData.emojiStyle = emojiStyle;
     if (allowVideoImageFallback !== undefined) updateData.allowVideoImageFallback = !!allowVideoImageFallback;
 
@@ -643,6 +644,88 @@ router.get('/:id/media', requireAuth, requireWorkspaceAccess, async (req, res) =
   } catch (err) {
     console.error('List workspace media error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/workspaces/:id/style-guides
+ * Returns per-platform AI style guides for workspace.
+ */
+router.get('/:id/style-guides', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const workspaceId = req.params.id;
+    const platforms = ['LINKEDIN', 'PINTEREST', 'YOUTUBE'];
+    const result = { LINKEDIN: null, PINTEREST: null, YOUTUBE: null };
+
+    const templates = await prisma.template.findMany({
+      where: { workspaceId },
+    });
+
+    for (const p of platforms) {
+      const match = templates.find((t) => t.platform === p);
+      if (match && match.aiStyleGuide) {
+        result[p] = match.aiStyleGuide;
+      }
+    }
+
+    res.json({ styleGuides: result });
+  } catch (err) {
+    console.error('Get style guides error:', err);
+    res.status(500).json({ error: 'Failed to fetch style guides' });
+  }
+});
+
+/**
+ * PATCH /api/workspaces/:id/style-guides/:platform
+ * Updates or creates a workspace-specific template's aiStyleGuide.
+ */
+router.patch('/:id/style-guides/:platform', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const workspaceId = req.params.id;
+    const platform = req.params.platform.toUpperCase();
+    const validPlatforms = ['LINKEDIN', 'PINTEREST', 'YOUTUBE'];
+
+    if (!validPlatforms.includes(platform)) {
+      return res.status(400).json({ error: 'Invalid platform. Must be LINKEDIN, PINTEREST, or YOUTUBE.' });
+    }
+
+    const { aiStyleGuide } = req.body;
+    const guideValue = typeof aiStyleGuide === 'string' && aiStyleGuide.trim() ? aiStyleGuide.trim() : null;
+
+    let template = await prisma.template.findFirst({
+      where: { workspaceId, platform },
+    });
+
+    if (template) {
+      template = await prisma.template.update({
+        where: { id: template.id },
+        data: { aiStyleGuide: guideValue },
+      });
+    } else {
+      // Find global default template to clone templateBody
+      const defaultTemplate = await prisma.template.findFirst({
+        where: { workspaceId: null, platform, isDefault: true },
+      });
+
+      const templateBody = defaultTemplate?.templateBody || '{{headline}}\n\n{{description}}\n\n{{hashtags}}';
+      const brandName = req.workspace?.brandName || 'Custom';
+
+      template = await prisma.template.create({
+        data: {
+          workspaceId,
+          platform,
+          name: `${brandName} ${platform} Template`,
+          templateBody,
+          aiStyleGuide: guideValue,
+          isDefault: false,
+        },
+      });
+    }
+
+    res.json({ template, platform, aiStyleGuide: template.aiStyleGuide });
+  } catch (err) {
+    console.error('Update style guide error:', err);
+    res.status(500).json({ error: 'Failed to update style guide' });
   }
 });
 
