@@ -24,6 +24,7 @@ interface Workspace {
   defaultHashtags: string[];
   brandVoice?: string | null;
   brandDescription?: string | null;
+  contactInfoBlock?: string | null;
   emojiStyle?: string | null;
   automationMode?: string | null;
   defaultSlotTime?: string | null;
