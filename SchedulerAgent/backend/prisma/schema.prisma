@@ -169,6 +169,8 @@ model Media {
   aiMasterJson Json?
   aiDegraded   Boolean     @default(false)
   aiProvider   String?
+  userApproved Boolean     @default(false)
+  analysisError String?
   destinationUrl String?
   batchId      String?
   sequenceIndex Int?

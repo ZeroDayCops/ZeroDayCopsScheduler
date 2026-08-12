@@ -504,4 +504,35 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/media/:id/approve — Explicit server-side user approval for degraded AI content
+router.post('/:id/approve', requireAuth, async (req, res) => {
+  try {
+    const media = await getAccessibleMedia(req, res);
+    if (!media) return;
+
+    const updatedMedia = await prisma.media.update({
+      where: { id: media.id },
+      data: { userApproved: true },
+    });
+
+    // Unblock any PENDING_REVIEW scheduled posts associated with this media
+    const unblockedPosts = await prisma.scheduledPost.updateMany({
+      where: { mediaId: media.id, status: 'PENDING_REVIEW' },
+      data: { status: 'PENDING' },
+    });
+
+    console.log(`[APPROVAL] User ${req.userId} approved degraded media ${media.id}. Unblocked ${unblockedPosts.count} scheduled post(s).`);
+
+    res.json({
+      success: true,
+      message: 'Media content approved successfully. Auto-scheduling and publishing unblocked.',
+      media: updatedMedia,
+      unblockedCount: unblockedPosts.count,
+    });
+  } catch (err) {
+    console.error('Approve media error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

@@ -103,6 +103,9 @@ async function handlePostAnalysisAutomation(mediaId) {
           where: { workspaceId: workspace.id, mediaId: media.id, platform },
         });
 
+        const isDegradedUnapproved = media.aiDegraded && !media.userApproved;
+        const initialStatus = isDegradedUnapproved ? 'PENDING_REVIEW' : 'PENDING';
+
         let post;
         if (existingPost) {
           post = await prisma.scheduledPost.update({
@@ -111,7 +114,7 @@ async function handlePostAnalysisAutomation(mediaId) {
               renderedContent: rendering,
               scheduledFor,
               scheduleSource: source,
-              status: 'PENDING',
+              status: initialStatus,
               retryCount: 0,
             },
           });
@@ -125,13 +128,13 @@ async function handlePostAnalysisAutomation(mediaId) {
               renderedContent: rendering,
               scheduledFor,
               scheduleSource: source,
-              status: 'PENDING',
+              status: initialStatus,
             },
           });
         }
 
         createdPosts.push(post);
-        outcomes.push({ platform, status: 'SCHEDULED', scheduledFor });
+        outcomes.push({ platform, status: isDegradedUnapproved ? 'PENDING_REVIEW' : 'SCHEDULED', scheduledFor });
 
       } catch (err) {
         console.error(`[AUTOMATION] Error processing ${platform}:`, err.message);
@@ -142,11 +145,14 @@ async function handlePostAnalysisAutomation(mediaId) {
     // Emit consolidated per-Media auto-schedule fan-out summary notification!
     await createMediaAutoScheduleSummaryNotification(mediaId, outcomes);
 
-    // AUTO_PUBLISH mode or immediate due post trigger
-    if ((mode === 'AUTO_PUBLISH' || (scheduleParsed.isMatch && scheduleParsed.scheduledDate <= new Date())) && createdPosts.length > 0) {
+    // AUTO_PUBLISH mode or immediate due post trigger (STRICT SECURITY GUARD: SKIP IF DEGRADED & UNAPPROVED)
+    const isDegradedUnapproved = media.aiDegraded && !media.userApproved;
+    if (!isDegradedUnapproved && (mode === 'AUTO_PUBLISH' || (scheduleParsed.isMatch && scheduleParsed.scheduledDate <= new Date())) && createdPosts.length > 0) {
       console.log(`[AUTOMATION] Triggering immediate publish for ${createdPosts.length} post(s)...`);
       const { processDuePosts } = require('./scheduler');
       await processDuePosts();
+    } else if (isDegradedUnapproved) {
+      console.warn(`[AUTOMATION SECURITY GUARD] Media ${mediaId} is AI Degraded and unapproved by user. Skipping auto-publish trigger.`);
     }
 
     console.log(`[AUTOMATION] Completed auto-scheduling for media ${mediaId}. Created ${createdPosts.length} post(s).`);

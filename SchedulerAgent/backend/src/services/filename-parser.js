@@ -180,4 +180,70 @@ function parseFilenameSchedule(filename, defaultSlotTime = '20:00', timezone = '
   };
 }
 
-module.exports = { parseFilenameSchedule, createDateInTimezone };
+/**
+ * Classifies whether a filename is a non-semantic / junk filename.
+ * Non-semantic filenames include download prefixes (ClipDown.com_*), camera defaults (IMG_*, DSC_*),
+ * messaging app media (WhatsApp_Image_*), timestamps, UUIDs, and numeric hashes.
+ */
+function isJunkFilename(filename) {
+  if (!filename || typeof filename !== 'string') return true;
+
+  const baseName = filename.replace(/\.[^/.]+$/, '').trim();
+  if (!baseName) return true;
+
+  // Patterns for non-semantic downloaders, camera defaults, UUIDs, and hashes
+  const junkPatterns = [
+    /^clipdown/i,
+    /^y2mate/i,
+    /^savefrom/i,
+    /^snaptik/i,
+    /^ssstik/i,
+    /^img[_\-\s\d]/i,
+    /^dsc[_\-\s\d]/i,
+    /^whatsapp[_\-\s]image/i,
+    /^screenshot[_\-\s]/i,
+    /^vid[_\-\s\d]/i,
+    /^file[_\-\s]\d+[_\-\s]\d+/i,
+    /^\d+$/,                                    // Pure numbers
+    /^[a-f0-9]{20,}$/i,                         // Hex hash
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, // UUID
+    /^\d+_\d+_\d+/i,                            // Social media numeric dump e.g. 745393869_15478129...
+  ];
+
+  return junkPatterns.some((pattern) => pattern.test(baseName));
+}
+
+/**
+ * Normalizes a filename into a clean contextual title string if semantic,
+ * or returns null if the filename is determined to be non-semantic junk.
+ */
+function cleanFilenameContext(filename) {
+  if (!filename || isJunkFilename(filename)) {
+    return null;
+  }
+
+  // Remove extension
+  let clean = filename.replace(/\.[^/.]+$/, '');
+  // Replace underscores and hyphens with spaces
+  clean = clean.replace(/[-_]+/g, ' ').trim();
+  // Remove dates parsed by schedule parser
+  clean = clean.replace(/\b(\d{1,2})(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\d*\b/gi, '').trim();
+
+  if (!clean || clean.length < 3 || /^\d+$/.test(clean)) {
+    return null;
+  }
+
+  // Title case conversion
+  return clean
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+module.exports = {
+  parseFilenameSchedule,
+  createDateInTimezone,
+  isJunkFilename,
+  cleanFilenameContext,
+};

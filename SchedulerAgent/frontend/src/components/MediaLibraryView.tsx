@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { useMedia, useUploadMedia, useDeleteMedia } from '../hooks/useMedia';
-import { API_BASE } from '../lib/api';
+import { API_BASE, fetchApi } from '../lib/api';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
 import { ConfirmDialog } from './ui/ConfirmDialog';
@@ -13,7 +13,7 @@ import { UploadCloud, Image, Video, ChevronRight, Sparkles, Smile, Trash2, Loade
 interface MediaItem {
   id: string; filename: string; mediaType: 'IMAGE' | 'VIDEO';
   status: 'NEW' | 'ANALYZING' | 'ANALYZED' | 'FAILED';
-  statusDetail?: string | null; aiMasterJson?: any; aiDegraded?: boolean; aiProvider?: string | null; createdAt: string;
+  statusDetail?: string | null; aiMasterJson?: any; aiDegraded?: boolean; aiProvider?: string | null; userApproved?: boolean; createdAt: string;
 }
 
 const ElapsedTimer: React.FC<{ createdAt: string }> = ({ createdAt }) => {
@@ -27,7 +27,11 @@ const ElapsedTimer: React.FC<{ createdAt: string }> = ({ createdAt }) => {
 
 const MediaStatusBadge: React.FC<{ media: MediaItem }> = ({ media }) => {
   switch (media.status) {
-    case 'ANALYZED': return <Badge type="PUBLISHED" label="Ready" />;
+    case 'ANALYZED':
+      if (media.aiDegraded && !media.userApproved) {
+        return <Badge type="WARNING" label="Approval Required" />;
+      }
+      return <Badge type="PUBLISHED" label="Ready" />;
     case 'ANALYZING': return <span className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-400"><Loader2 className="w-3 h-3 animate-spin" /><span className="truncate max-w-[120px]">{media.statusDetail || 'Analyzing'}</span><ElapsedTimer createdAt={media.createdAt} /></span>;
     case 'FAILED': return <Badge type="FAILED" />;
     default: return <span className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 animate-pulse-glow"><Badge type="PENDING" label="Queued" /><ElapsedTimer createdAt={media.createdAt} /></span>;
@@ -69,6 +73,17 @@ export const MediaLibraryView: React.FC = () => {
   };
 
   if (!currentWorkspace) return <div className="flex items-center justify-center h-full text-slate-400">Select a workspace first.</div>;
+
+  const handleApproveMedia = async () => {
+    if (!selectedMedia) return;
+    try {
+      await fetchApi(`/media/${selectedMedia.id}/approve`, { method: 'POST' });
+      setSelectedMedia(prev => prev ? { ...prev, userApproved: true } : null);
+      refetch();
+    } catch (err: any) {
+      console.error('Failed to approve media:', err);
+    }
+  };
 
   return (
     <div className="flex h-full gap-8 relative pb-12 animate-fade-in">
@@ -179,6 +194,24 @@ export const MediaLibraryView: React.FC = () => {
                   </span>
                 )}
               </div>
+              {selectedMedia.aiDegraded && !selectedMedia.userApproved && (
+                <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl space-y-2 text-xs">
+                  <div className="font-bold text-amber-300 flex items-center gap-1">
+                    <span>⚠️ Approval Required</span>
+                  </div>
+                  <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                    This media was fallback-generated. Backend auto-publishing is blocked until you review and approve it.
+                  </p>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="w-full justify-center bg-amber-500 hover:bg-amber-600 text-black font-extrabold"
+                    onClick={handleApproveMedia}
+                  >
+                    Approve & Enable Auto-Publish
+                  </Button>
+                </div>
+              )}
               <div className="bg-[#070b14] border border-white/5 rounded-xl p-4 space-y-3 text-xs">
                 {selectedMedia.aiMasterJson.product && <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Theme</span><div className="text-sm font-bold text-indigo-300 mt-1">{selectedMedia.aiMasterJson.product}</div></div>}
                 {selectedMedia.aiMasterJson.suggested_cta && <div><span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">CTA</span><div className="font-semibold text-purple-300 mt-1">{selectedMedia.aiMasterJson.suggested_cta}</div></div>}

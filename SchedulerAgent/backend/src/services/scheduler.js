@@ -82,6 +82,23 @@ async function processDuePosts() {
         throw new Error(`Associated media file not found`);
       }
 
+      // STRICT BACKEND SECURITY GUARD: Block publishing degraded AI content without explicit user approval
+      if (media.aiDegraded && !media.userApproved) {
+        await prisma.scheduledPost.update({
+          where: { id: post.id },
+          data: { status: 'PENDING_REVIEW' },
+        });
+        await prisma.postLog.create({
+          data: {
+            scheduledPostId: post.id,
+            event: 'SKIPPED',
+            message: 'Publishing blocked: Media AI content is degraded and requires explicit user approval.',
+          },
+        });
+        console.warn(`[SCHEDULER SECURITY GUARD] Skipping post ${post.id}: Media ${media.id} is degraded and unapproved.`);
+        continue;
+      }
+
       // 4. Trigger platform publisher
       post.socialAccount = refreshedAccount;
       post.workspace = media.workspace;

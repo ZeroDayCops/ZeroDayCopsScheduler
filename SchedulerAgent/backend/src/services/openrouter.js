@@ -71,23 +71,16 @@ function getMimeType(filePath) {
 
 const { downloadFromR2 } = require('./r2Storage');
 
+const { cleanFilenameContext, isJunkFilename } = require('./filename-parser');
+
 /**
  * Generates dynamic, file-unique copy if offline or un-keyed.
  */
 function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, workspace) {
   const brand = workspace.brandName || 'Brand';
 
-  let baseName = path.basename(filename, path.extname(filename))
-    .replace(/^file[-_]?/i, '')
-    .replace(/[-_]/g, ' ')
-    .trim();
-
-  // Strip date schedule patterns (e.g. 31july0834, 27july, 30jul2000) from product name
-  baseName = baseName.replace(/^[0-9]{1,2}(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[0-9]*/gi, '').trim();
-
-  const cleanTitle = (baseName.length > 2)
-    ? baseName.replace(/\b\w/g, c => c.toUpperCase()) 
-    : `${brand} Visual`;
+  const cleanContext = cleanFilenameContext(filename);
+  const cleanTitle = cleanContext ? cleanContext : `${brand} Collection Item`;
 
   const emojiList = emojiStyle === 'heavy' ? ['🚀', '✨', '🔥', '📸', '⚡'] : emojiStyle === 'moderate' ? ['✨', '🎯'] : ['✨'];
   const emojiStr = emojiList.join(' ');
@@ -224,13 +217,17 @@ async function requestOpenAIJson({ model, prompt, imageBuffer, mimeType, timeout
     throw new Error('OPENAI_API_KEY is not configured.');
   }
 
-  const content = [{ type: 'text', text: prompt }];
-  if (imageBuffer) {
-    content.push({
+  if (!imageBuffer || imageBuffer.length === 0) {
+    throw new Error('[VISION ASSERTION FAILED] Cannot call vision provider without a valid image buffer.');
+  }
+
+  const content = [
+    { type: 'text', text: prompt },
+    {
       type: 'image_url',
       image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${imageBuffer.toString('base64')}` },
-    });
-  }
+    },
+  ];
 
   const request = async (messages) => axios.post(
     'https://api.openai.com/v1/chat/completions',
@@ -269,13 +266,17 @@ async function requestOpenRouterJson({ model, prompt, imageBuffer, mimeType, tim
     throw new Error('OPENROUTER_API_KEY is not configured.');
   }
 
-  const content = [{ type: 'text', text: prompt }];
-  if (imageBuffer) {
-    content.push({
+  if (!imageBuffer || imageBuffer.length === 0) {
+    throw new Error('[VISION ASSERTION FAILED] Cannot call vision provider without a valid image buffer.');
+  }
+
+  const content = [
+    { type: 'text', text: prompt },
+    {
       type: 'image_url',
       image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${imageBuffer.toString('base64')}` },
-    });
-  }
+    },
+  ];
 
   const request = async (messages) => axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
@@ -361,18 +362,33 @@ async function analyzeMedia(mediaId) {
     });
 
     const storageProvider = require('./storageProvider');
-    const ext = path.extname(media.filename) || (media.mediaType === 'VIDEO' ? '.mp4' : '.jpg');
-    tempR2DownloadedPath = path.join(os.tmpdir(), `ai-analysis-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+    const mediaRes = await storageProvider.getReadableMedia(media);
 
-    try {
-      await storageProvider.downloadFile(media.r2Key || media.filepath, tempR2DownloadedPath);
-    } catch (dlErr) {
-      console.warn(`[AI ENGINE] Storage fetch failed for media ${mediaId}:`, dlErr.message);
+    if (mediaRes.error || !mediaRes.buffer || mediaRes.buffer.length === 0) {
+      console.error(`[AI ENGINE] 🛑 Hard Stop: Media asset ${mediaId} missing or unreadable in storage. Key/Path: ${media.r2Key || media.filepath}`);
+      await prisma.media.update({
+        where: { id: mediaId },
+        data: {
+          status: 'FAILED',
+          statusDetail: 'Media asset file missing or unreadable in storage',
+          analysisError: mediaRes.error || 'Media file unavailable in storage',
+          aiMasterJson: { error: 'Media file unavailable in storage' },
+        },
+      });
+      if (media.batchId) {
+        await checkBatchCompletion(media.batchId);
+      }
+      return;
     }
 
-    let localPath = fs.existsSync(tempR2DownloadedPath) ? tempR2DownloadedPath : storageProvider.resolveLocalPath(media.filepath);
+    let imageBuffer = mediaRes.buffer;
+    let mimeType = mediaRes.mimeType || 'image/jpeg';
+    if (mediaRes.tempPath) {
+      tempR2DownloadedPath = mediaRes.tempPath;
+    }
 
     if (media.mediaType === 'VIDEO') {
+      const localPath = mediaRes.path || tempR2DownloadedPath;
       if (localPath && fs.existsSync(localPath)) {
         await prisma.media.update({
           where: { id: mediaId },
@@ -382,20 +398,14 @@ async function analyzeMedia(mediaId) {
         try {
           tempTrimmedPath = await trimVideo(localPath);
           tempFramePath = await extractVideoFrame(tempTrimmedPath);
-          imageToAnalyze = tempFramePath;
+          if (tempFramePath && fs.existsSync(tempFramePath)) {
+            imageBuffer = fs.readFileSync(tempFramePath);
+            mimeType = 'image/jpeg';
+          }
         } catch (ffmpegErr) {
           console.warn('[AI ENGINE] FFmpeg frame extraction failed:', ffmpegErr.message);
         }
       }
-    } else {
-      if (localPath && fs.existsSync(localPath)) {
-        imageToAnalyze = localPath;
-      }
-    }
-
-    // STRICT VALIDATION: Abort analysis if physical image/video buffer is unreadable
-    if (!imageToAnalyze || !fs.existsSync(imageToAnalyze) || fs.statSync(imageToAnalyze).size === 0) {
-      throw new Error(`Media asset file is missing or unreadable in storage. Key/Path: ${media.r2Key || media.filepath}`);
     }
 
 
@@ -513,13 +523,6 @@ Return a Master JSON with a specific product, headline, description, content-spe
 
     let resultJson = null;
     let isDegraded = false;
-    let imageBuffer = null;
-    let mimeType = 'image/jpeg';
-
-    if (imageToAnalyze && fs.existsSync(imageToAnalyze)) {
-      imageBuffer = fs.readFileSync(imageToAnalyze);
-      mimeType = getMimeType(imageToAnalyze);
-    }
 
     const schemaInstruction = masterJsonSchemaInstruction(configuredPlatforms);
 

@@ -153,6 +153,83 @@ async function deleteObject(keyOrPath) {
   }
 }
 
+/**
+ * Obtains a validated, readable Buffer and MIME metadata for a Media model instance.
+ * Checks local disk cache first, falls back to downloading from Cloudflare R2 if missing,
+ * and validates that the resulting buffer is non-empty.
+ */
+async function getReadableMedia(media) {
+  if (!media) return { error: 'Media parameter is null or undefined' };
+
+  const keyOrPath = media.r2Key || media.filepath;
+  if (!keyOrPath) return { error: 'No storage key or filepath defined on media' };
+
+  const ext = path.extname(media.filename) || (media.mediaType === 'VIDEO' ? '.mp4' : '.jpg');
+  const mimeMap = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.webm': 'video/webm',
+    '.avi': 'video/x-msvideo',
+    '.mkv': 'video/x-matroska',
+  };
+  const mimeType = mimeMap[ext.toLowerCase()] || 'image/jpeg';
+
+  // 1. Try local disk path
+  const local = resolveLocalPath(keyOrPath);
+  if (local && fs.existsSync(local)) {
+    try {
+      const stats = fs.statSync(local);
+      if (stats.size > 0) {
+        const buffer = fs.readFileSync(local);
+        if (buffer && buffer.length > 0) {
+          return {
+            buffer,
+            mimeType,
+            contentLength: buffer.length,
+            isLocal: true,
+            path: local,
+          };
+        }
+      }
+    } catch (localErr) {
+      console.warn(`[STORAGE PROVIDER] Failed reading local file ${local}:`, localErr.message);
+    }
+  }
+
+  // 2. Try Cloudflare R2 object download
+  const tempDownloadPath = path.join(os.tmpdir(), `r2-fetch-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+  try {
+    const downloadedPath = await downloadFile(keyOrPath, tempDownloadPath);
+    if (downloadedPath && fs.existsSync(downloadedPath)) {
+      const stats = fs.statSync(downloadedPath);
+      if (stats.size > 0) {
+        const buffer = fs.readFileSync(downloadedPath);
+        if (buffer && buffer.length > 0) {
+          return {
+            buffer,
+            mimeType,
+            contentLength: buffer.length,
+            isLocal: false,
+            tempPath: downloadedPath,
+          };
+        }
+      }
+    }
+  } catch (r2Err) {
+    console.warn(`[STORAGE PROVIDER] Failed downloading media from R2 for ${keyOrPath}:`, r2Err.message);
+  }
+
+  return {
+    error: `Media file missing or unreadable in local disk and R2 storage: ${keyOrPath}`,
+    mediaId: media.id,
+  };
+}
+
 module.exports = {
   resolveLocalPath,
   exists,
@@ -160,6 +237,7 @@ module.exports = {
   getReadStream,
   downloadFile,
   deleteObject,
+  getReadableMedia,
   uploadToR2,
   generatePresignedUploadUrl,
   s3Client,
