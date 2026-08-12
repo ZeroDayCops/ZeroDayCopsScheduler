@@ -53,7 +53,7 @@ router.get('/google-business/connect', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'workspaceId query parameter is required' });
     }
     const state = JSON.stringify({ workspaceId, userId: req.userId });
-    const url = gbpService.getAuthUrl(state);
+    const url = gbpService.getAuthUrl(state, req);
     res.redirect(url);
   } catch (err) {
     console.error('[GBP OAUTH CONNECT ERROR]:', err.message);
@@ -76,7 +76,7 @@ router.get('/google-business/callback', async (req, res) => {
     }
 
     const { workspaceId } = JSON.parse(state || '{}');
-    const { connection, locations } = await gbpService.handleOAuthCallback(code);
+    const { connection, locations } = await gbpService.handleOAuthCallback(code, req);
 
     // Auto-link discovered locations to the workspace
     if (workspaceId && locations.length > 0) {

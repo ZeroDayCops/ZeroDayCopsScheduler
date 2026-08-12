@@ -9,10 +9,21 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
 ];
 
-function getOAuthClient() {
-  const clientId = process.env.GOOGLE_BUSINESS_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_BUSINESS_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET;
-  const redirectUri = process.env.GOOGLE_BUSINESS_REDIRECT_URI || `${process.env.REDIRECT_URI_BASE || 'https://scheduler.zerodaycops.in/api/oauth'}/google-business/callback`;
+function getOAuthClient(req) {
+  const clientId = (process.env.GOOGLE_BUSINESS_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID || '').trim();
+  const clientSecret = (process.env.GOOGLE_BUSINESS_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET || '').trim();
+
+  // Enforce exact canonical redirect URI matching Google Cloud Console credentials
+  let redirectUri = (process.env.GOOGLE_BUSINESS_REDIRECT_URI || '').trim();
+  if (!redirectUri) {
+    if (req) {
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+      const host = req.headers['x-forwarded-host'] || req.get('host') || 'scheduler.zerodaycops.in';
+      redirectUri = `${protocol}://${host}/api/oauth/google-business/callback`;
+    } else {
+      redirectUri = 'https://scheduler.zerodaycops.in/api/oauth/google-business/callback';
+    }
+  }
 
   if (!clientId || !clientSecret) {
     throw new Error('Google Business Profile OAuth credentials (GOOGLE_BUSINESS_CLIENT_ID & GOOGLE_BUSINESS_CLIENT_SECRET) are not configured.');
@@ -24,8 +35,8 @@ function getOAuthClient() {
 /**
   * Generates Google OAuth authorization URL for GBP
   */
-function getAuthUrl(state) {
-  const oauth2Client = getOAuthClient();
+function getAuthUrl(state, req) {
+  const oauth2Client = getOAuthClient(req);
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
@@ -37,8 +48,8 @@ function getAuthUrl(state) {
 /**
  * Exchanges authorization code for tokens, discovers account info, and stores GoogleConnection record
  */
-async function handleOAuthCallback(code) {
-  const oauth2Client = getOAuthClient();
+async function handleOAuthCallback(code, req) {
+  const oauth2Client = getOAuthClient(req);
   const { tokens } = await oauth2Client.getToken(code);
   oauth2Client.setCredentials(tokens);
 
