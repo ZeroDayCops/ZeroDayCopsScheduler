@@ -15,6 +15,11 @@ async function handlePostAnalysisAutomation(mediaId) {
         workspace: {
           include: {
             socialAccounts: true,
+            googleLocations: {
+              include: {
+                googleBusinessLocation: true,
+              },
+            },
           },
         },
       },
@@ -139,6 +144,79 @@ async function handlePostAnalysisAutomation(mediaId) {
       } catch (err) {
         console.error(`[AUTOMATION] Error processing ${platform}:`, err.message);
         outcomes.push({ platform, status: 'FAILED', detail: err.message });
+      }
+    }
+
+    // Google Business Profile Multi-Location Scheduling
+    const linkedGbpLocations = workspace.googleLocations || [];
+    if (linkedGbpLocations.length > 0) {
+      const gbpPlatform = 'GOOGLE_BUSINESS';
+      let template = await prisma.template.findFirst({
+        where: { workspaceId: workspace.id, platform: gbpPlatform },
+      }) || await prisma.template.findFirst({
+        where: { workspaceId: null, platform: gbpPlatform, isDefault: true },
+      });
+
+      if (template) {
+        const rendering = renderPost(media, workspace, template, gbpPlatform);
+        let scheduledFor = scheduleParsed.isMatch
+          ? scheduleParsed.scheduledDate
+          : await determineScheduleTime(workspace, gbpPlatform);
+
+        const isDegradedUnapproved = media.aiDegraded && !media.userApproved;
+        const initialStatus = isDegradedUnapproved ? 'PENDING_REVIEW' : 'PENDING';
+
+        // Find or create dummy socialAccount for schema constraint
+        let dummyAccount = workspace.socialAccounts.find(sa => sa.platform === gbpPlatform);
+        if (!dummyAccount) {
+          dummyAccount = await prisma.socialAccount.upsert({
+            where: { workspaceId_platform: { workspaceId: workspace.id, platform: gbpPlatform } },
+            update: { status: 'CONNECTED' },
+            create: { workspaceId: workspace.id, platform: gbpPlatform, status: 'CONNECTED' },
+          });
+        }
+
+        for (const locLink of linkedGbpLocations) {
+          const location = locLink.googleBusinessLocation;
+          if (!location) continue;
+
+          try {
+            const existingPost = await prisma.scheduledPost.findFirst({
+              where: { workspaceId: workspace.id, mediaId: media.id, platform: gbpPlatform, googleLocationId: location.id },
+            });
+
+            let post;
+            if (existingPost) {
+              post = await prisma.scheduledPost.update({
+                where: { id: existingPost.id },
+                data: {
+                  renderedContent: rendering,
+                  scheduledFor,
+                  status: initialStatus,
+                },
+              });
+            } else {
+              post = await prisma.scheduledPost.create({
+                data: {
+                  workspaceId: workspace.id,
+                  mediaId: media.id,
+                  socialAccountId: dummyAccount.id,
+                  platform: gbpPlatform,
+                  googleLocationId: location.id,
+                  renderedContent: rendering,
+                  scheduledFor,
+                  scheduleSource: source,
+                  status: initialStatus,
+                },
+              });
+            }
+
+            createdPosts.push(post);
+            outcomes.push({ platform: `GOOGLE_BUSINESS (${location.locationName})`, status: isDegradedUnapproved ? 'PENDING_REVIEW' : 'SCHEDULED', scheduledFor });
+          } catch (locErr) {
+            console.error(`[AUTOMATION] Error scheduling GBP location ${location.locationName}:`, locErr.message);
+          }
+        }
       }
     }
 

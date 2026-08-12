@@ -34,7 +34,8 @@ router.get('/config-status', requireAuth, (req, res) => {
     config: {
       LINKEDIN: isConfigured('LINKEDIN'),
       PINTEREST: isConfigured('PINTEREST'),
-      YOUTUBE: isConfigured('YOUTUBE')
+      YOUTUBE: isConfigured('YOUTUBE'),
+      GOOGLE_BUSINESS: isConfigured('GOOGLE_BUSINESS') || isConfigured('YOUTUBE'),
     }
   });
 });
@@ -713,6 +714,119 @@ router.post('/:platform/disconnect', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Disconnect error:', err);
     res.status(500).json({ error: 'Failed to disconnect account' });
+  }
+});
+
+const gbpService = require('../services/google-business');
+
+/**
+ * GET /api/oauth/google-business/connect
+ * Starts Google Business Profile OAuth flow
+ */
+router.get('/google-business/connect', requireAuth, async (req, res) => {
+  try {
+    const { workspaceId } = req.query;
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspaceId query parameter is required' });
+    }
+    const state = JSON.stringify({ workspaceId, userId: req.userId });
+    const url = gbpService.getAuthUrl(state);
+    res.redirect(url);
+  } catch (err) {
+    console.error('[GBP OAUTH CONNECT ERROR]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/oauth/google-business/callback
+ * Handles Google Business Profile OAuth redirect callback
+ */
+router.get('/google-business/callback', async (req, res) => {
+  try {
+    const { code, state, error } = req.query;
+    if (error) {
+      return res.redirect(`/settings?error=${encodeURIComponent(error)}#connections`);
+    }
+    if (!code) {
+      return res.redirect('/settings?error=No+code+provided#connections');
+    }
+
+    const { workspaceId } = JSON.parse(state || '{}');
+    const { connection, locations } = await gbpService.handleOAuthCallback(code);
+
+    // Auto-link discovered locations to the workspace
+    if (workspaceId && locations.length > 0) {
+      for (const loc of locations) {
+        await prisma.workspaceGoogleLocation.upsert({
+          where: {
+            workspaceId_googleBusinessLocationId: {
+              workspaceId,
+              googleBusinessLocationId: loc.id,
+            },
+          },
+          update: {},
+          create: {
+            workspaceId,
+            googleBusinessLocationId: loc.id,
+          },
+        });
+      }
+    }
+
+    res.redirect(`/settings?gbpConnected=true&locationsCount=${locations.length}&workspaceId=${workspaceId || ''}#connections`);
+  } catch (err) {
+    console.error('[GBP OAUTH CALLBACK ERROR]:', err.message);
+    res.redirect(`/settings?error=${encodeURIComponent(err.message)}#connections`);
+  }
+});
+
+/**
+ * GET /api/oauth/google-business/connections
+ * Lists all connected Google accounts & discovered locations
+ */
+router.get('/google-business/connections', requireAuth, async (req, res) => {
+  try {
+    const connections = await prisma.googleConnection.findMany({
+      include: {
+        locations: {
+          include: {
+            workspaceLocations: {
+              include: {
+                workspace: {
+                  select: { id: true, brandName: true },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json({ connections });
+  } catch (err) {
+    console.error('[GBP CONNECTIONS ERROR]:', err.message);
+    res.status(500).json({ error: 'Failed to fetch Google Business connections' });
+  }
+});
+
+/**
+ * POST /api/oauth/google-business/sync-locations
+ * Re-runs location discovery for a GoogleConnection
+ */
+router.post('/google-business/sync-locations', requireAuth, async (req, res) => {
+  try {
+    const { connectionId } = req.body || {};
+    if (!connectionId) {
+      return res.status(400).json({ error: 'connectionId is required' });
+    }
+
+    const locations = await gbpService.discoverLocationsForConnection(connectionId);
+    res.json({ success: true, count: locations.length, locations });
+  } catch (err) {
+    console.error('[GBP SYNC ERROR]:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

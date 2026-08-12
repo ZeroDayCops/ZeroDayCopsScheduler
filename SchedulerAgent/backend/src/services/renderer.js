@@ -191,6 +191,24 @@ function renderPost(media, workspace, template, platform) {
     };
   }
 
+  if (platform === 'GOOGLE_BUSINESS') {
+    const title = headline.substring(0, 100);
+    // Remove excessive hashtags for GBP local updates unless explicitly in template body
+    let gbpBody = body;
+    if (gbpBody.length > 1500) {
+      warnings.push(`Google Business Profile post exceeds limit of 1500 characters (truncated to 1500).`);
+      gbpBody = gbpBody.substring(0, 1500);
+    }
+    const ctaUrl = media.destinationUrl || workspace.website || '';
+    return {
+      title,
+      body: gbpBody,
+      ctaUrl,
+      ctaAction: 'LEARN_MORE',
+      warnings,
+    };
+  }
+
   return {
     body,
     warnings,

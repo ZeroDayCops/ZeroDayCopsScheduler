@@ -13,12 +13,16 @@ import {
   Sparkles, Clock, ChevronDown, Unlink
 } from 'lucide-react';
 
-const PLATFORM_NAMES: Record<string, string> = { LINKEDIN: 'LinkedIn', PINTEREST: 'Pinterest', YOUTUBE: 'YouTube' };
-const PLATFORM_COLORS: Record<string, string> = { LINKEDIN: 'text-blue-400', PINTEREST: 'text-pink-500', YOUTUBE: 'text-red-400' };
+import { GBPLocationManagerModal } from './GBPLocationManagerModal';
+
+const PLATFORM_NAMES: Record<string, string> = { LINKEDIN: 'LinkedIn', PINTEREST: 'Pinterest', YOUTUBE: 'YouTube', GOOGLE_BUSINESS: 'Google Business Profile' };
+const PLATFORM_COLORS: Record<string, string> = { LINKEDIN: 'text-blue-400', PINTEREST: 'text-pink-500', YOUTUBE: 'text-red-400', GOOGLE_BUSINESS: 'text-emerald-400' };
 
 export const SettingsView: React.FC = () => {
   const { currentWorkspace, setCurrentWorkspace } = useApp();
   const queryClient = useQueryClient();
+
+  const [showGBPModal, setShowGBPModal] = useState(false);
 
   // React Query for fresh workspace data — refetch automatically
   const wsQuery = useQuery({
@@ -332,8 +336,48 @@ export const SettingsView: React.FC = () => {
               </div>
             );
           })}
+
+          {/* Google Business Profile Connection Card */}
+          <div className="border border-white/5 rounded-xl p-4 space-y-3 bg-[#080d16]/50">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-emerald-400">Google Business Profile</span>
+              <Badge type={freshWs?.googleLocations?.length > 0 ? 'CONNECTED' : 'NOT_CONNECTED'} />
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Publish local updates, photos, and videos to multiple Google Business locations seamlessly.
+            </p>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  window.location.href = `${API_BASE}/oauth/google-business/connect?workspaceId=${currentWorkspace?.id}`;
+                }}
+              >
+                Connect Google Account
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Building className="w-3.5 h-3.5" />}
+                onClick={() => setShowGBPModal(true)}
+              >
+                Manage Locations ({freshWs?.googleLocations?.length || 0})
+              </Button>
+            </div>
+          </div>
         </Card>
       </div>
+
+      {showGBPModal && currentWorkspace && (
+        <GBPLocationManagerModal
+          workspaceId={currentWorkspace.id}
+          workspaceName={currentWorkspace.brandName}
+          onClose={() => setShowGBPModal(false)}
+        />
+      )}
 
       {/* AI Caption Style Guides */}
       <Card className="p-6 space-y-5">

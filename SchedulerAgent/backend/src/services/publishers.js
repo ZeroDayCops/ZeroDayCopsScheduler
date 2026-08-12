@@ -524,6 +524,18 @@ async function publishToPlatform(post, decryptedToken, media) {
         return await publishToPinterest(post, decryptedToken, activeMedia);
       case 'YOUTUBE':
         return await publishToYouTube(post, decryptedToken, activeMedia);
+      case 'GOOGLE_BUSINESS':
+        const gbpService = require('./google-business');
+        if (!post.googleLocationId) {
+          throw new Error('googleLocationId is required for Google Business Profile post.');
+        }
+        return await gbpService.createLocalPost(
+          post.googleLocationId,
+          post.renderedContent,
+          activeMedia.r2Url,
+          post.renderedContent?.ctaUrl || activeMedia.destinationUrl,
+          post.renderedContent?.ctaAction || 'LEARN_MORE'
+        );
       default:
         return {
           success: false,

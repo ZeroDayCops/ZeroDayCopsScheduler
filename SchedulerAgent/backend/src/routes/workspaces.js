@@ -729,4 +729,91 @@ router.patch('/:id/style-guides/:platform', requireAuth, requireWorkspaceAccess,
   }
 });
 
+/**
+ * GET /api/workspaces/:id/gbp-locations
+ * Fetches all discovered GBP locations and indicates which ones are linked to this workspace
+ */
+router.get('/:id/gbp-locations', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const workspaceId = req.params.id;
+    const connections = await prisma.googleConnection.findMany({
+      include: {
+        locations: {
+          include: {
+            workspaceLocations: {
+              where: { workspaceId },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const formattedConnections = connections.map(conn => ({
+      id: conn.id,
+      googleEmail: conn.googleEmail,
+      googleAccountId: conn.googleAccountId,
+      status: conn.status,
+      locations: conn.locations.map(loc => ({
+        id: loc.id,
+        googleLocationId: loc.googleLocationId,
+        locationName: loc.locationName,
+        address: loc.address,
+        city: loc.city,
+        state: loc.state,
+        status: loc.status,
+        isLinked: loc.workspaceLocations.length > 0,
+      })),
+    }));
+
+    res.json({ connections: formattedConnections });
+  } catch (err) {
+    console.error('[WORKSPACE GBP LOCATIONS ERROR]:', err.message);
+    res.status(500).json({ error: 'Failed to fetch workspace Google Business locations' });
+  }
+});
+
+/**
+ * POST /api/workspaces/:id/gbp-locations/toggle
+ * Links or unlinks a GoogleBusinessLocation to this workspace
+ */
+router.post('/:id/gbp-locations/toggle', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const workspaceId = req.params.id;
+    const { googleBusinessLocationId, enable } = req.body || {};
+
+    if (!googleBusinessLocationId) {
+      return res.status(400).json({ error: 'googleBusinessLocationId is required' });
+    }
+
+    if (enable) {
+      await prisma.workspaceGoogleLocation.upsert({
+        where: {
+          workspaceId_googleBusinessLocationId: {
+            workspaceId,
+            googleBusinessLocationId,
+          },
+        },
+        update: {},
+        create: {
+          workspaceId,
+          googleBusinessLocationId,
+        },
+      });
+    } else {
+      await prisma.workspaceGoogleLocation.deleteMany({
+        where: {
+          workspaceId,
+          googleBusinessLocationId,
+        },
+      });
+    }
+
+    res.json({ success: true, workspaceId, googleBusinessLocationId, isLinked: !!enable });
+  } catch (err) {
+    console.error('[WORKSPACE GBP TOGGLE ERROR]:', err.message);
+    res.status(500).json({ error: 'Failed to update workspace Google Business location mapping' });
+  }
+});
+
 module.exports = router;

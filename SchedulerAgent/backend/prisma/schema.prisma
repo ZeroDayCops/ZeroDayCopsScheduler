@@ -22,6 +22,7 @@ enum Platform {
   LINKEDIN
   PINTEREST
   YOUTUBE
+  GOOGLE_BUSINESS
 }
 
 enum SocialAccountStatus {
@@ -111,9 +112,10 @@ model Workspace {
   timezone                String            @default("Asia/Kolkata")
   allowVideoImageFallback Boolean           @default(false)
   createdAt               DateTime          @default(now())
-  organization            Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization            Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   workspaceAccess         WorkspaceAccess[]
   socialAccounts          SocialAccount[]
+  googleLocations         WorkspaceGoogleLocation[]
   media                   Media[]
   templates               Template[]
   scheduledPosts          ScheduledPost[]
@@ -152,6 +154,54 @@ model SocialAccount {
   scheduledPosts        ScheduledPost[]
 
   @@unique([workspaceId, platform])
+}
+
+// ─── GoogleConnection (Account-level Google OAuth Token Storage) ──
+
+model GoogleConnection {
+  id                    String                   @id @default(uuid())
+  googleAccountId       String                   @unique
+  googleEmail           String?
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String
+  expiresAt             DateTime?
+  status                SocialAccountStatus      @default(CONNECTED)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  locations             GoogleBusinessLocation[]
+}
+
+// ─── GoogleBusinessLocation (Discovered GBP Locations) ─────────
+
+model GoogleBusinessLocation {
+  id                 String                  @id @default(uuid())
+  googleConnectionId String
+  googleAccountId    String
+  googleLocationId   String                  @unique // e.g. "locations/123456789"
+  locationName       String                  // Display name e.g. "Jamai Raja - Ahmedabad"
+  address            String?                 // Street / city summary
+  city               String?
+  state              String?
+  metadata           Json?
+  status             SocialAccountStatus     @default(CONNECTED)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  googleConnection   GoogleConnection        @relation(fields: [googleConnectionId], references: [id], onDelete: Cascade)
+  workspaceLocations WorkspaceGoogleLocation[]
+  scheduledPosts     ScheduledPost[]
+}
+
+// ─── WorkspaceGoogleLocation (Workspace Authorization Junction) ──
+
+model WorkspaceGoogleLocation {
+  id                       String                 @id @default(uuid())
+  workspaceId              String
+  googleBusinessLocationId String
+  createdAt                DateTime               @default(now())
+  workspace                Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  googleBusinessLocation   GoogleBusinessLocation @relation(fields: [googleBusinessLocationId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, googleBusinessLocationId])
 }
 
 // ─── Media (ingested images and videos) ──────────────────────────
@@ -231,28 +281,31 @@ model UploadBatch {
 }
 
 model ScheduledPost {
-  id              String         @id @default(uuid())
+  id              String                  @id @default(uuid())
   workspaceId     String
   mediaId         String
   socialAccountId String
   platform        Platform
+  googleLocationId String?
   renderedContent Json
   scheduledFor    DateTime
-  scheduleSource  ScheduleSource @default(MANUAL)
-  status          PostStatus     @default(PENDING)
+  scheduleSource  ScheduleSource          @default(MANUAL)
+  status          PostStatus              @default(PENDING)
   publishedAt     DateTime?
   externalPostId  String?
-  retryCount      Int            @default(0)
+  retryCount      Int                     @default(0)
   batchId         String?
-  workspace       Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  media           Media          @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-  socialAccount   SocialAccount  @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
-  batch           UploadBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  workspace       Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  media           Media                   @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  socialAccount   SocialAccount           @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  googleLocation  GoogleBusinessLocation? @relation(fields: [googleLocationId], references: [id], onDelete: SetNull)
+  batch           UploadBatch?            @relation(fields: [batchId], references: [id], onDelete: SetNull)
   postLogs        PostLog[]
 
   @@index([workspaceId, scheduledFor])
   @@index([status])
   @@index([batchId])
+  @@index([googleLocationId])
 }
 
 // ─── PostLog (history of publishing attempts) ────────────────────

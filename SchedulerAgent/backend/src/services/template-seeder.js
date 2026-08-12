@@ -23,6 +23,12 @@ async function seedDefaultTemplates() {
         templateBody: '{{headline}}\n\n{{description}}\n\n{{cta}}\n\n{{contactBlock}}\n\n{{hashtags}}',
         isDefault: true,
       },
+      {
+        platform: 'GOOGLE_BUSINESS',
+        name: 'Google Business Profile Default Template',
+        templateBody: '{{headline}}\n\n{{description}}\n\n{{cta}}',
+        isDefault: true,
+      },
     ];
 
     for (const item of defaults) {

@@ -66,11 +66,25 @@ async function processDuePosts() {
     });
 
     try {
-      // 1. Proactive Token Refresh
-      const refreshedAccount = await refreshTokenIfNeeded(post.socialAccountId);
-      
-      // 2. Decrypt Access Token
-      const decryptedToken = decrypt(refreshedAccount.accessTokenEncrypted);
+      let decryptedToken = null;
+      let refreshedAccount = null;
+
+      if (post.platform === 'GOOGLE_BUSINESS') {
+        const gbpService = require('./google-business');
+        if (post.googleLocationId) {
+          const loc = await prisma.googleBusinessLocation.findUnique({
+            where: { id: post.googleLocationId },
+          });
+          if (loc) {
+            decryptedToken = await gbpService.getValidAccessToken(loc.googleConnectionId);
+          }
+        }
+      } else {
+        // 1. Proactive Token Refresh for standard platforms
+        refreshedAccount = await refreshTokenIfNeeded(post.socialAccountId);
+        // 2. Decrypt Access Token
+        decryptedToken = decrypt(refreshedAccount.accessTokenEncrypted);
+      }
 
       // 3. Fetch Media Details with Workspace
       const media = await prisma.media.findUnique({

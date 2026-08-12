@@ -18,7 +18,7 @@ import {
 
 import { formatInWorkspaceTimezone } from '../lib/date-utils';
 
-const PLATFORM_NAMES: Record<string, string> = { LINKEDIN: 'LinkedIn', PINTEREST: 'Pinterest', YOUTUBE: 'YouTube' };
+const PLATFORM_NAMES: Record<string, string> = { LINKEDIN: 'LinkedIn', PINTEREST: 'Pinterest', YOUTUBE: 'YouTube', GOOGLE_BUSINESS: 'Google Business Profile' };
 
 interface PreviewContent { title?: string; body: string; hashtags?: string[]; warnings?: string[] }
 
@@ -160,17 +160,17 @@ export const PlannerView: React.FC = () => {
               <h3 className="text-sm font-bold text-slate-300 border-b border-white/5 pb-2">2. Design & Queue</h3>
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Platforms</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['LINKEDIN', 'PINTEREST', 'YOUTUBE'] as const).map(p => {
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(['LINKEDIN', 'PINTEREST', 'YOUTUBE', 'GOOGLE_BUSINESS'] as const).map(p => {
                     const isYouTubeDisabled = p === 'YOUTUBE' && selectedMedia?.mediaType === 'IMAGE';
                     return (
                       <button key={p} type="button" onClick={() => togglePlatform(p)} aria-pressed={platforms.includes(p)}
                         disabled={isYouTubeDisabled}
                         title={isYouTubeDisabled ? 'YouTube requires video assets' : undefined}
-                        className={`py-2 px-3 border rounded-xl text-xs font-bold transition text-center uppercase tracking-wide focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                        className={`py-2 px-2 border rounded-xl text-[11px] font-bold transition text-center uppercase tracking-wide focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                           isYouTubeDisabled ? 'border-white/5 bg-[#080d16] text-slate-600 cursor-not-allowed opacity-50' :
                           platforms.includes(p) ? 'border-indigo-500 bg-indigo-500/5 text-indigo-400 cursor-pointer' : 'border-white/5 bg-[#080d16] text-slate-400 hover:border-white/10 cursor-pointer'}`}>
-                        {PLATFORM_NAMES[p]}
+                        {p === 'GOOGLE_BUSINESS' ? 'Google Business' : PLATFORM_NAMES[p]}
                       </button>
                     );
                   })}
