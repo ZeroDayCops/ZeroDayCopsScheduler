@@ -10,7 +10,7 @@ const SCOPES = [
 ];
 
 function getOAuthClient(req) {
-  const clientId = (process.env.GOOGLE_BUSINESS_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID || '').trim();
+  const clientId = (process.env.GOOGLE_BUSINESS_CLIENT_ID || '923868252205-av81pctflf11v87pbfalj61dst7ibm8c.apps.googleusercontent.com').trim();
   const clientSecret = (process.env.GOOGLE_BUSINESS_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET || '').trim();
 
   // Enforce exact canonical redirect URI matching Google Cloud Console credentials
