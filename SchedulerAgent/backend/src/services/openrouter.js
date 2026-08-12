@@ -134,12 +134,20 @@ function isConfiguredKey(value) {
   return Boolean(value && value.trim() && !value.includes('your-'));
 }
 
-function parseMasterJson(rawText) {
-  if (typeof rawText !== 'string') {
-    throw new Error('AI response did not contain text JSON.');
+function parseMasterJson(input) {
+  let parsed;
+  if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
+    parsed = input;
+  } else if (typeof input === 'string') {
+    try {
+      parsed = JSON.parse(input.replace(/```json\n?|\n?```/g, '').trim());
+    } catch (e) {
+      throw new Error(`AI response JSON parsing failed: ${e.message}`);
+    }
+  } else {
+    throw new Error('AI response did not contain valid text or object JSON.');
   }
 
-  const parsed = JSON.parse(rawText.replace(/```json\n?|\n?```/g, '').trim());
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('AI response must be a JSON object.');
   }
@@ -307,32 +315,85 @@ async function requestOpenRouterJson({ model, prompt, imageBuffer, mimeType, tim
 
 async function regenerateCaption(media, userTags = [], notes = '') {
   const existingMasterJson = parseMasterJson(JSON.stringify(media.aiMasterJson));
-  const tagsText = userTags.length
-    ? `The user has confirmed this content includes: ${userTags.join(', ')}. Reflect these hints accurately when supported by the existing visual facts.`
-    : 'The user has not supplied additional tags.';
-  const notesText = notes.trim() ? `Additional user notes: ${notes.trim()}` : 'No additional user notes were supplied.';
-  const prompt = `You are refining social-media copy for the brand "${media.workspace.brandName || 'the brand'}". The existing Master JSON was created from visual analysis and is the source of truth for the depicted facts. Preserve those facts; do not invent people, products, claims, or visual details. Rewrite headline, description, keywords, and hashtags to incorporate the confirmed user hints. Keep the existing product, mood, and suggested_cta unless a change is strictly necessary for consistency.\n\nExisting Master JSON:\n${JSON.stringify(existingMasterJson)}\n\n${tagsText}\n${notesText}\n\n${masterJsonSchemaInstruction()}`;
+  const storageProvider = require('./storageProvider');
 
-  // Prefer OpenAI direct → OpenRouter fallback for refinement
+  // Retrieve image buffer for multi-modal vision refinement
+  const mediaRes = await storageProvider.getReadableMedia(media);
+  let imageBuffer = mediaRes.buffer || null;
+  let mimeType = mediaRes.mimeType || 'image/jpeg';
+
+  const brand = media.workspace?.brandName || 'the brand';
+  const brandClean = (media.workspace?.brandName || 'Brand').replace(/\s+/g, '');
+  const brandVoice = media.workspace?.brandVoice || 'Bold & Precise';
+  const emojiStyle = media.workspace?.emojiStyle || 'moderate';
+
+  const tagsText = userTags.length
+    ? `USER-CONFIRMED SEMANTIC TAGS: ${userTags.join(', ')}.\nThese tags are CONFIRMED SEMANTIC CONTEXT. Combine them directly with what you visually observe in the attached image to produce an accurate, highly specific fashion product name (e.g. "Embroidered Indo-Western Sherwani", "Classic Ivory Sherwani").`
+    : 'No additional user tags supplied.';
+
+  const notesText = notes.trim()
+    ? `USER EMPHASIS NOTES: ${notes.trim()}.\nThese notes have HIGH PRIORITY. Tailor the tone, focus, and product narrative around these explicit instructions.`
+    : 'No additional user notes supplied.';
+
+  const prompt = `You are an expert fashion brand copywriter and content strategist for "${brand}".
+ANALYZE THE ATTACHED IMAGE AND REFINE THE SOCIAL MEDIA COPY.
+
+CORE PRINCIPLE:
+1. THE ATTACHED IMAGE IS THE PRIMARY SOURCE OF TRUTH.
+2. COMBINE VISUAL OBSERVATIONS (garment category, silhouette, embroidery, color, groom/model context, styling) WITH THE USER-CONFIRMED TAGS AND EMPHASIS NOTES BELOW.
+3. PRODUCT NAMING: Output a specific, professional fashion product name for "product" (e.g., "Embroidered Indo-Western Sherwani", "Contemporary Jodhpuri Suit", "Ivory Groom Sherwani"). NEVER use generic text like "Transforming Your Vision", "Premium Fashion", or filename text.
+4. HEADLINE & DESCRIPTION: Write authentic, regal marketing copy for "${brand}". Incorporate brand voice (${brandVoice}) and emojis (${emojiStyle}). Do not invent unobserved materials or prices.
+
+Existing Master JSON State:
+${JSON.stringify(existingMasterJson)}
+
+${tagsText}
+
+${notesText}
+
+Return a refined Master JSON matching the exact schema contract below.
+${masterJsonSchemaInstruction()}`;
+
+  // Prefer OpenAI direct → OpenRouter fallback for vision refinement
   let refined;
-  if (isConfiguredKey(process.env.OPENAI_API_KEY)) {
-    const model = process.env.OPENAI_REFINEMENT_MODEL || 'gpt-4o-mini';
-    console.log(`[AI ENGINE] Caption refinement via OpenAI (${model})...`);
-    refined = await requestOpenAIJson({ model, prompt, timeout: 25000 });
-  } else if (isConfiguredKey(process.env.OPENROUTER_API_KEY)) {
-    const model = process.env.OPENROUTER_REFINEMENT_MODEL || 'openai/gpt-5.6-luna';
-    console.log(`[AI ENGINE] Caption refinement via OpenRouter (${model})...`);
-    refined = await requestOpenRouterJson({ model, prompt, timeout: 25000 });
+  if (isConfiguredKey(process.env.OPENAI_API_KEY) && imageBuffer) {
+    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    console.log(`[AI ENGINE] Image-aware fashion caption refinement via OpenAI (${model})...`);
+    refined = await requestOpenAIJson({ model, prompt, imageBuffer, mimeType, timeout: 35000 });
+  } else if (isConfiguredKey(process.env.OPENROUTER_API_KEY) && imageBuffer) {
+    const model = process.env.OPENROUTER_PRIMARY_MODEL || 'openai/gpt-4o-mini';
+    console.log(`[AI ENGINE] Image-aware fashion caption refinement via OpenRouter (${model})...`);
+    refined = await requestOpenRouterJson({ model, prompt, imageBuffer, mimeType, timeout: 35000 });
   } else {
-    throw new Error('No API key configured for caption refinement. Set OPENAI_API_KEY or OPENROUTER_API_KEY.');
+    // Text fallback if image buffer unavailable
+    console.warn(`[AI ENGINE] Image buffer unavailable for media ${media.id}, falling back to text prompt refinement...`);
+    const fallbackPrompt = `${prompt}\n\nNote: Image buffer was unreadable in storage. Refine copy based on existing Master JSON facts and user tags/notes.`;
+    if (isConfiguredKey(process.env.OPENAI_API_KEY)) {
+      const model = process.env.OPENAI_REFINEMENT_MODEL || 'gpt-4o-mini';
+      const request = async (messages) => axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        { model, messages, response_format: { type: 'json_object' } },
+        { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY.trim()}`, 'Content-Type': 'application/json' }, timeout: 25000 }
+      );
+      const res = await request([{ role: 'user', content: fallbackPrompt }]);
+      refined = parseMasterJson(res.data?.choices?.[0]?.message?.content);
+    } else if (isConfiguredKey(process.env.OPENROUTER_API_KEY)) {
+      const model = process.env.OPENROUTER_REFINEMENT_MODEL || 'openai/gpt-4o-mini';
+      const request = async (messages) => axios.post(
+        'https://openrouter.ai/api/v1/chat/completions',
+        { model, messages, response_format: { type: 'json_object' } },
+        { headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY.trim()}`, 'Content-Type': 'application/json' }, timeout: 25000 }
+      );
+      const res = await request([{ role: 'user', content: fallbackPrompt }]);
+      refined = parseMasterJson(res.data?.choices?.[0]?.message?.content);
+    } else {
+      throw new Error('No API key configured for caption refinement.');
+    }
   }
 
-  // Keep vision-derived identity fields stable; this action is intentionally a caption refinement.
   return parseMasterJson(JSON.stringify({
+    ...existingMasterJson,
     ...refined,
-    product: existingMasterJson.product,
-    ...(existingMasterJson.mood ? { mood: existingMasterJson.mood } : {}),
-    ...(existingMasterJson.suggested_cta ? { suggested_cta: existingMasterJson.suggested_cta } : {}),
   }));
 }
 

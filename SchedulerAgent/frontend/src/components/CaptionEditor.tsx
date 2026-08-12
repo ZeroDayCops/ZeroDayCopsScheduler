@@ -79,11 +79,18 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ media, onUpdated, 
   };
 
   const addTag = () => {
-    const tag = tagInput.trim();
-    if (!tag) return;
-    if (!userTags.some(existing => existing.toLowerCase() === tag.toLowerCase())) {
-      setUserTags(current => [...current, tag]);
-    }
+    const input = tagInput.trim();
+    if (!input) return;
+    const newItems = input.split(',').map(item => item.trim()).filter(Boolean);
+    setUserTags(current => {
+      const updated = [...current];
+      for (const tag of newItems) {
+        if (!updated.some(existing => existing.toLowerCase() === tag.toLowerCase())) {
+          updated.push(tag);
+        }
+      }
+      return updated;
+    });
     setTagInput('');
   };
 
