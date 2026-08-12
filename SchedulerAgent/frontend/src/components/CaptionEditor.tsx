@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Globe, Loader2, Plus, Save, Sparkles, X } from 'lucide-react';
+import { CheckCircle2, Globe, Loader2, Save, Sparkles } from 'lucide-react';
 import { fetchApi } from '../lib/api';
 import { Button } from './ui/Button';
 
@@ -51,9 +51,9 @@ function parseList(value: string, isHashtag = false): string[] {
 
 export const CaptionEditor: React.FC<CaptionEditorProps> = ({ media, onUpdated, compact = false }) => {
   const [draft, setDraft] = useState<MasterJsonDraft>(() => draftFromMasterJson(media.aiMasterJson, media.destinationUrl));
-  const [userTags, setUserTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState('');
-  const [notes, setNotes] = useState('');
+  const [productInput, setProductInput] = useState(() => {
+    return typeof media.aiMasterJson?.product === 'string' ? media.aiMasterJson.product : '';
+  });
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,37 +61,22 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ media, onUpdated, 
 
   useEffect(() => {
     setDraft(draftFromMasterJson(media.aiMasterJson, media.destinationUrl));
-    setUserTags([]);
-    setTagInput('');
-    setNotes('');
+    setProductInput(typeof media.aiMasterJson?.product === 'string' ? media.aiMasterJson.product : '');
     setError(null);
     setConfirmation(null);
   }, [media.id, media.aiMasterJson, media.destinationUrl]);
 
   const applyUpdate = (result: CaptionUpdateResponse) => {
     setDraft(draftFromMasterJson(result.aiMasterJson, result.media?.destinationUrl ?? draft.destinationUrl));
+    if (typeof result.aiMasterJson?.product === 'string') {
+      setProductInput(result.aiMasterJson.product);
+    }
     setConfirmation(
       result.refreshedPostCount > 0
         ? `${result.refreshedPostCount} scheduled post${result.refreshedPostCount === 1 ? '' : 's'} updated.`
-        : 'Caption saved. No pending scheduled posts needed an update.'
+        : 'Caption saved successfully.'
     );
     onUpdated?.(result.media);
-  };
-
-  const addTag = () => {
-    const input = tagInput.trim();
-    if (!input) return;
-    const newItems = input.split(',').map(item => item.trim()).filter(Boolean);
-    setUserTags(current => {
-      const updated = [...current];
-      for (const tag of newItems) {
-        if (!updated.some(existing => existing.toLowerCase() === tag.toLowerCase())) {
-          updated.push(tag);
-        }
-      }
-      return updated;
-    });
-    setTagInput('');
   };
 
   const generate = async () => {
@@ -99,9 +84,12 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ media, onUpdated, 
     setError(null);
     setConfirmation(null);
     try {
+      const userTags = productInput.trim()
+        ? productInput.split(',').map(item => item.trim()).filter(Boolean)
+        : [];
       const result = await fetchApi<CaptionUpdateResponse>(`/media/${media.id}/regenerate-caption`, {
         method: 'POST',
-        body: JSON.stringify({ userTags, notes }),
+        body: JSON.stringify({ userTags, notes: '' }),
       });
       applyUpdate(result);
     } catch (requestError) {
@@ -136,38 +124,39 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ media, onUpdated, 
     <section className={`space-y-4 ${compact ? 'pt-3' : 'border-t border-white/5 pt-4'}`} aria-label="Caption editor">
       <div className="flex items-center gap-2">
         <Sparkles className="w-4 h-4 text-indigo-400" />
-        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Caption editor</h4>
+        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Caption Editor</h4>
       </div>
 
       <div className="space-y-2">
-        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Confirmed content tags</label>
-        <div className="flex flex-wrap gap-1.5">
-          {userTags.map(tag => (
-            <span key={tag} className="inline-flex items-center gap-1 rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-1 text-[10px] font-semibold text-indigo-200">
-              {tag}
-              <button type="button" onClick={() => setUserTags(current => current.filter(value => value !== tag))} aria-label={`Remove ${tag}`} className="text-indigo-300 hover:text-rose-300"><X className="w-3 h-3" /></button>
-            </span>
-          ))}
-        </div>
+        <label className="block text-[10px] font-bold uppercase tracking-wider text-indigo-400">
+          Product / Garment Name
+        </label>
         <div className="flex gap-2">
           <input
-            value={tagInput}
-            onChange={event => setTagInput(event.target.value)}
-            onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addTag(); } }}
-            placeholder="e.g. sherwani, embroidery"
-            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900/70 px-2.5 py-2 text-xs text-slate-200 outline-none focus:border-indigo-500"
+            value={productInput}
+            onChange={event => setProductInput(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                generate();
+              }
+            }}
+            placeholder="e.g. Indo-Western Sherwani, Kurta Set"
+            className="min-w-0 flex-1 rounded-lg border border-indigo-500/30 bg-slate-900/90 px-3 py-2 text-xs font-semibold text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/50"
           />
-          <Button type="button" variant="secondary" size="sm" onClick={addTag} icon={<Plus className="w-3.5 h-3.5" />}>Add</Button>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={generate}
+            isLoading={isGenerating}
+            icon={isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold whitespace-nowrap"
+          >
+            Auto-Generate
+          </Button>
         </div>
       </div>
-
-      <div>
-        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Optional notes</label>
-        <textarea value={notes} onChange={event => setNotes(event.target.value)} rows={compact ? 2 : 3} placeholder="Tone, emphasis, or confirmed details for the rewrite"
-          className="w-full resize-y rounded-lg border border-white/10 bg-slate-900/70 px-2.5 py-2 text-xs leading-relaxed text-slate-200 outline-none focus:border-indigo-500" />
-      </div>
-
-      <Button type="button" variant="secondary" size="sm" onClick={generate} isLoading={isGenerating} icon={isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}>Generate</Button>
 
       <div className="space-y-3 rounded-xl border border-white/5 bg-[#070b14] p-3">
         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Destination Link (URL) <span className="normal-case text-slate-600">(Overrides website link for Pinterest & social posts)</span>
