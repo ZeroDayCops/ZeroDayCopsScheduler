@@ -523,9 +523,11 @@ Return a Master JSON with a specific product, headline, description, content-spe
 
     const schemaInstruction = masterJsonSchemaInstruction(configuredPlatforms);
 
-    // ─── PROVIDER 0: ChatGPT Direct via OpenAI API (TOP TIER) ────────
+    let activeProvider = null;
+
+    // ─── PROVIDER 0: ChatGPT Direct via OpenAI API (Primary) ────────
     const openaiKey = process.env.OPENAI_API_KEY;
-    const primaryOpenAIModel = process.env.OPENAI_MODEL || 'gpt-4o';
+    const primaryOpenAIModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     if (!resultJson && isConfiguredKey(openaiKey)) {
       try {
         console.log(`[AI ENGINE] 🔥 Analyzing media ${mediaId} with ${primaryOpenAIModel} via OpenAI Direct...`);
@@ -539,15 +541,16 @@ Return a Master JSON with a specific product, headline, description, content-spe
           imageBuffer,
           mimeType,
         });
+        activeProvider = `ChatGPT (${primaryOpenAIModel})`;
         console.log(`[AI ENGINE] ✅ ChatGPT ${primaryOpenAIModel} analysis successful for media ${mediaId}`);
       } catch (openaiErr) {
         console.warn('[AI ENGINE] OpenAI direct unavailable:', openaiErr.response?.data || openaiErr.message);
       }
     }
 
-    // ─── PROVIDER 1: OpenRouter Fallback (multimodal) ────────────────
+    // ─── PROVIDER 1: OpenRouter Fallback ─────────────────────────────
     const openrouterKey = process.env.OPENROUTER_API_KEY;
-    const primaryOpenRouterModel = process.env.OPENROUTER_PRIMARY_MODEL || 'openai/gpt-5.6-terra';
+    const primaryOpenRouterModel = process.env.OPENROUTER_PRIMARY_MODEL || 'openai/gpt-4o-mini';
     if (!resultJson && isConfiguredKey(openrouterKey)) {
       try {
         console.log(`[AI ENGINE] Analyzing media ${mediaId} with ${primaryOpenRouterModel} via OpenRouter...`);
@@ -561,6 +564,7 @@ Return a Master JSON with a specific product, headline, description, content-spe
           imageBuffer,
           mimeType,
         });
+        activeProvider = `OpenRouter (${primaryOpenRouterModel})`;
         console.log(`[AI ENGINE] ${primaryOpenRouterModel} analysis successful for media ${mediaId}`);
       } catch (primaryErr) {
         console.warn('[AI ENGINE] OpenRouter primary unavailable:', primaryErr.response?.data || primaryErr.message);
@@ -588,69 +592,18 @@ Return a Master JSON with a specific product, headline, description, content-spe
         );
 
         resultJson = parseMasterJson(ollamaRes.data.response);
+        activeProvider = 'Local Ollama (qwen2.5:1.5b)';
         console.log(`[AI ENGINE] Ollama analysis successful for media ${mediaId}`);
       } catch (ollamaErr) {
         console.warn('[AI ENGINE] Ollama fallback unavailable:', ollamaErr.message);
       }
     }
 
-    // ─── PROVIDER 3: Google Gemini Vision API (fallback) ─────────────
-    const geminiKey = process.env.GEMINI_API_KEY;
-    let geminiModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-    if (!resultJson && isConfiguredKey(geminiKey)) {
-      try {
-        const modelsRes = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey.trim()}`, { timeout: 10000 });
-        const availableNames = (modelsRes.data.models || [])
-          .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-          .map(m => m.name.replace('models/', ''));
-        const preferredModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
-        const resolved = preferredModels.find(p => availableNames.includes(p)) || availableNames.find(n => n.includes('flash'));
-        if (resolved) {
-          geminiModel = resolved;
-          console.log(`[AI ENGINE] Live ListModels resolved active Gemini model: ${geminiModel}`);
-        }
-      } catch (listErr) {
-        console.warn('[AI ENGINE] Failed to fetch live ListModels list, using configured default:', geminiModel, listErr.message);
-      }
-
-      try {
-        console.log(`[AI ENGINE] Falling back to Google Gemini Vision (${geminiModel})...`);
-        await prisma.media.update({
-          where: { id: mediaId },
-          data: { statusDetail: `Analyzing image with Gemini Vision AI (${geminiModel})...` },
-        });
-
-        const parts = [{ text: systemPrompt }];
-        if (imageBuffer) {
-          parts.push({
-            inline_data: {
-              mime_type: mimeType,
-              data: imageBuffer.toString('base64'),
-            },
-          });
-        }
-
-        const geminiRes = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey.trim()}`,
-          {
-            contents: [{ parts }],
-            generationConfig: { response_mime_type: 'application/json' },
-          },
-          { timeout: 35000 }
-        );
-
-        const rawText = geminiRes.data.candidates[0].content.parts[0].text;
-        resultJson = parseMasterJson(rawText);
-        console.log(`[AI ENGINE] Gemini Vision analysis successful for media ${mediaId}`);
-      } catch (err) {
-        console.warn('[AI ENGINE] Gemini Vision API failed:', err.response?.data || err.message);
-      }
-    }
-
-    // ─── PROVIDER 4: Dynamic Generator (Degraded Fallback) ───────────
+    // ─── PROVIDER 3: Dynamic Generator (Degraded Fallback) ───────────
     if (!resultJson || !resultJson.product || !resultJson.headline || !resultJson.description) {
       console.warn(`[AI ENGINE] All AI vision providers failed for media ${mediaId}. Falling through to degraded dynamic generator.`);
       isDegraded = true;
+      activeProvider = 'Dynamic Generator';
       resultJson = generateDynamicContent(
         media.filename,
         media.mediaType,
@@ -660,7 +613,7 @@ Return a Master JSON with a specific product, headline, description, content-spe
       );
     }
 
-    // Save final analyzed AI result
+    // Save final analyzed AI result with aiProvider
     await prisma.media.update({
       where: { id: mediaId },
       data: {
@@ -668,6 +621,7 @@ Return a Master JSON with a specific product, headline, description, content-spe
         statusDetail: null,
         aiMasterJson: resultJson,
         aiDegraded: isDegraded,
+        aiProvider: activeProvider,
       },
     });
 

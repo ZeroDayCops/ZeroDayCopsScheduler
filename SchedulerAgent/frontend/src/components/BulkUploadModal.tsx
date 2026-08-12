@@ -26,6 +26,7 @@ import {
   Check,
   Eye,
   ArrowRight,
+  Video,
 } from 'lucide-react';
 
 interface BulkUploadModalProps {
@@ -86,11 +87,13 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
 
   const handleFileSelect = (files: FileList | File[]) => {
     const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.avi', '.mkv'];
+    const ALL_EXTS = [...IMAGE_EXTS, ...VIDEO_EXTS];
+
     const arr = Array.from(files).filter(f => {
-      // Check MIME type first, then fallback to extension (File.type can be empty on some OS/browser combos)
-      if (f.type && f.type.startsWith('image/')) return true;
+      if (f.type && (f.type.startsWith('image/') || f.type.startsWith('video/'))) return true;
       const ext = f.name.toLowerCase().slice(f.name.lastIndexOf('.'));
-      return IMAGE_EXTS.includes(ext);
+      return ALL_EXTS.includes(ext);
     }).slice(0, 20);
     if (arr.length === 0) return;
 
@@ -160,10 +163,10 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
           <div>
             <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-indigo-400" />
-              Bulk Image Upload & Smart Scheduling
+              Bulk Upload & Smart Scheduling
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Upload up to 20 images at once. AI will analyze each asset while you configure your post schedule.
+              Upload up to 20 images or videos at once. AI will analyze each asset while you configure your post schedule.
             </p>
           </div>
           <button
@@ -193,7 +196,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
                 type="file"
                 ref={fileInputRef}
                 multiple
-                accept="image/*"
+                accept="image/*,video/*"
                 onChange={(e) => {
                   if (e.target.files) handleFileSelect(e.target.files);
                   e.target.value = '';
@@ -208,10 +211,10 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
                 )}
               </div>
               <h3 className="text-base font-bold text-slate-200">
-                {bulkUploadUrlsMutation.isPending ? 'Preparing Upload Batch...' : 'Drag and drop up to 20 images here'}
+                {bulkUploadUrlsMutation.isPending ? 'Preparing Upload Batch...' : 'Drag and drop up to 20 images or videos here'}
               </h3>
               <p className="text-xs text-slate-400 mt-2 max-w-sm">
-                Select JPEG, PNG, WEBP, or GIF files. Each image will be analyzed individually by Gemini AI.
+                Select JPEG, PNG, WEBP, GIF, MP4, MOV, or WEBM files. Each asset will be analyzed individually.
               </p>
               {bulkUploadUrlsMutation.isError && (
                 <div className="mt-4 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-4 py-2 rounded-xl">
@@ -252,6 +255,11 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
                       }`}
                     >
                       <div className="aspect-square bg-black/60 rounded-xl overflow-hidden relative flex items-center justify-center">
+                        {media.mediaType === 'VIDEO' && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
+                            <Video className="w-7 h-7 text-indigo-400" />
+                          </div>
+                        )}
                         <img
                           src={`${API_BASE}/media/${media.id}/thumbnail`}
                           alt={media.filename}
@@ -261,7 +269,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClos
                             (e.target as HTMLImageElement).src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="%23f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
                           }}
                         />
-                        <div className="absolute top-1.5 left-1.5 bg-black/70 backdrop-blur-sm text-[10px] font-bold px-1.5 py-0.5 rounded-md text-slate-300 flex items-center gap-1">
+                        <div className="absolute top-1.5 left-1.5 z-20 bg-black/70 backdrop-blur-sm text-[10px] font-bold px-1.5 py-0.5 rounded-md text-slate-300 flex items-center gap-1">
                           <GripVertical className="w-3 h-3 text-slate-500" />
                           #{idx + 1}
                         </div>

@@ -11,6 +11,7 @@ export interface BulkUploadFile {
 export interface BatchMediaItem {
   id: string;
   filename: string;
+  mediaType: 'IMAGE' | 'VIDEO';
   sequenceIndex: number;
   status: 'NEW' | 'ANALYZING' | 'ANALYZED' | 'FAILED';
   statusDetail?: string | null;

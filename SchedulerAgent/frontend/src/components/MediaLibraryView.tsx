@@ -13,7 +13,7 @@ import { UploadCloud, Image, Video, ChevronRight, Sparkles, Smile, Trash2, Loade
 interface MediaItem {
   id: string; filename: string; mediaType: 'IMAGE' | 'VIDEO';
   status: 'NEW' | 'ANALYZING' | 'ANALYZED' | 'FAILED';
-  statusDetail?: string | null; aiMasterJson?: any; aiDegraded?: boolean; createdAt: string;
+  statusDetail?: string | null; aiMasterJson?: any; aiDegraded?: boolean; aiProvider?: string | null; createdAt: string;
 }
 
 const ElapsedTimer: React.FC<{ createdAt: string }> = ({ createdAt }) => {
@@ -76,14 +76,14 @@ export const MediaLibraryView: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-extrabold text-white tracking-tight">Media Library</h1>
-            <p className="text-slate-400 text-sm mt-1">Upload brand photos or videos to trigger Gemini AI analysis.</p>
+            <p className="text-slate-400 text-sm mt-1">Upload brand photos or videos to trigger AI analysis.</p>
           </div>
           <Button
             variant="primary"
             icon={<Layers className="w-4 h-4" />}
             onClick={() => setIsBulkModalOpen(true)}
           >
-            Bulk Upload Images
+            Bulk Upload Images & Videos
           </Button>
         </div>
 
@@ -172,7 +172,7 @@ export const MediaLibraryView: React.FC = () => {
           {selectedMedia.status === 'ANALYZED' && selectedMedia.aiMasterJson && (
             <div className="space-y-4 border-t border-white/5 pt-4">
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5"><Sparkles className="w-4 h-4 text-indigo-400" />Gemini Master Content</h4>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5"><Sparkles className="w-4 h-4 text-indigo-400" />{selectedMedia.aiProvider ? `AI Master Content — via ${selectedMedia.aiProvider}` : 'AI Master Content'}</h4>
                 {selectedMedia.aiDegraded && (
                   <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-md">
                     ⚠️ Auto-generated (review before publishing)

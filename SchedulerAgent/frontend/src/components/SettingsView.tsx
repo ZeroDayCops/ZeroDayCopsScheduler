@@ -202,13 +202,15 @@ export const SettingsView: React.FC = () => {
     const liAccount = freshWs?.socialAccounts?.find((s: any) => s.platform === 'LINKEDIN' && s.status === 'CONNECTED');
     if (!liAccount) return;
     try {
-      await fetchApi(`/oauth/linkedin/set-author`, {
-        method: 'POST',
-        body: JSON.stringify({ workspaceId: currentWorkspace.id, socialAccountId: liAccount.id, authorType: val ? 'ORGANIZATION' : 'PERSON', organizationId: val || undefined }),
+      const selectedAuthorUrn = val ? `urn:li:organization:${val}` : null;
+      await fetchApi(`/oauth/linkedin/author`, {
+        method: 'PUT',
+        body: JSON.stringify({ workspaceId: currentWorkspace.id, selectedAuthorUrn }),
       });
-      setToast({ type: 'success', message: 'Author setting updated' });
+      setToast({ type: 'success', message: 'Author setting updated successfully' });
+      queryClient.invalidateQueries({ queryKey: ['workspace', currentWorkspace.id] });
     } catch (err: any) {
-      setToast({ type: 'error', message: err.message });
+      setToast({ type: 'error', message: err.message || 'Failed to update author setting' });
     }
   };
 
