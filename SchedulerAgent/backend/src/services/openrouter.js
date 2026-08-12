@@ -371,11 +371,11 @@ ${masterJsonSchemaInstruction()}`;
   try {
     if (isConfiguredKey(process.env.OPENAI_API_KEY) && imageBuffer) {
       const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      console.log(`[AI ENGINE] Image-aware fashion caption refinement via OpenAI (${model})...`);
+      console.log(`[AI ENGINE] 🎯 Ultra low-cost & high-accuracy vision analysis via OpenAI (${model})...`);
       refined = await requestOpenAIJson({ model, prompt, imageBuffer, mimeType, timeout: 35000 });
     } else if (isConfiguredKey(process.env.OPENROUTER_API_KEY) && imageBuffer) {
       const model = process.env.OPENROUTER_PRIMARY_MODEL || 'openai/gpt-4o-mini';
-      console.log(`[AI ENGINE] Image-aware fashion caption refinement via OpenRouter (${model})...`);
+      console.log(`[AI ENGINE] 🎯 Ultra low-cost & high-accuracy vision analysis via OpenRouter (${model})...`);
       refined = await requestOpenRouterJson({ model, prompt, imageBuffer, mimeType, timeout: 35000 });
     } else {
       // Text fallback if image buffer unavailable
