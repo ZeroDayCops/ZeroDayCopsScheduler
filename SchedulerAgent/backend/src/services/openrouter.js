@@ -76,53 +76,65 @@ const { cleanFilenameContext, isJunkFilename } = require('./filename-parser');
 /**
  * Generates dynamic, file-unique copy if offline or un-keyed.
  */
-function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, workspace) {
-  const brand = workspace.brandName || 'Brand';
+function generateDynamicContent(filename, mediaType, brandVoice, emojiStyle, workspace, userTags = [], notes = '') {
+  const brand = workspace?.brandName || 'Brand';
+  const brandClean = brand.replace(/\s+/g, '');
 
-  const cleanContext = cleanFilenameContext(filename);
-  const cleanTitle = cleanContext ? cleanContext : `${brand} Collection Item`;
+  let cleanTitle = '';
+  if (Array.isArray(userTags) && userTags.length > 0) {
+    const formattedTags = userTags.map(t => t.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' '));
+    cleanTitle = formattedTags.join(' / ');
+    if (!cleanTitle.toLowerCase().includes('collection') && !cleanTitle.toLowerCase().includes('wear')) {
+      cleanTitle = `${cleanTitle} Collection`;
+    }
+  } else {
+    const cleanContext = cleanFilenameContext(filename);
+    cleanTitle = cleanContext ? cleanContext : `${brand} Signature Collection`;
+  }
 
-  const emojiList = emojiStyle === 'heavy' ? ['🚀', '✨', '🔥', '📸', '⚡'] : emojiStyle === 'moderate' ? ['✨', '🎯'] : ['✨'];
+  const emojiList = emojiStyle === 'heavy' ? ['✨', '👑', '🔥', '💫'] : emojiStyle === 'minimal' ? ['✨'] : ['✨', '👑'];
   const emojiStr = emojiList.join(' ');
 
   const headlines = [
-    `Unveiling ${cleanTitle} ${emojiStr}`,
-    `Next-Gen Spotlight: ${cleanTitle} by ${brand}`,
-    `Transforming Your Vision with ${cleanTitle}`,
-    `The Art of ${cleanTitle} — ${brand}`,
+    `${brand} ${cleanTitle} — Timeless Regal Elegance & Refined Tailoring ${emojiStr}`,
+    `The Heritage Collection by ${brand} — ${cleanTitle} ${emojiStr}`,
+    `Masterpiece Craftsmanship: ${cleanTitle} by ${brand} ${emojiStr}`,
+    `Elegance Redefined: ${brand} ${cleanTitle} ${emojiStr}`,
   ];
 
-  // Brand-integrated closings — rotate to avoid repetition
-  const closings = [
-    `\n\n— Team ${brand}`,
-    `\n\nOnly at ${brand}.`,
-    `\n\nCrafted with pride by ${brand}.`,
-    `\n\nExperience excellence at ${brand}.`,
-  ];
   const randomIdx = Math.floor(Math.random() * headlines.length);
-  const closing = closings[randomIdx % closings.length];
+
+  let noteContext = '';
+  if (typeof notes === 'string' && notes.trim()) {
+    noteContext = ` Designed with special emphasis on ${notes.trim()}.`;
+  }
 
   const copies = [
-    `At ${brand}, we bring you ${cleanTitle} — built to share key milestones and deliver clear, high-impact results. ${emojiStr}${closing}`,
-    `Presenting ${cleanTitle} from ${brand} — a concise look at our latest visual update. Designed to captivate your audience with unmistakable brand detail. ${emojiStr}${closing}`,
-    `Discover ${cleanTitle} at ${brand}. Elevating our visual content stream with sharp focus and professional quality. ${emojiStr}${closing}`,
+    `Step into pure sophistication with the ${brand} ${cleanTitle}. Impeccably tailored with intricate detailing, regal silhouettes, and premium craftsmanship, each creation embodies the timeless spirit of luxury fashion for the modern groom and distinguished guest.${noteContext} Experience the pinnacle of celebratory attire, designed to make every moment truly unforgettable.`,
+    `Discover the apex of luxury menswear with ${brand}. Featuring ${cleanTitle}, this creation brings together refined tailoring and contemporary elegance for weddings, receptions, and festive celebrations.${noteContext} Crafted with meticulous attention to detail to ensure an unforgettable royal presence.`,
+    `Presenting the ${brand} ${cleanTitle} — where traditional heritage meets contemporary sophistication. Designed for those who demand excellence, each silhouette combines regal elegance with unmatched comfort for your grandest occasions.${noteContext} Elevate your wardrobe with authentic fashion mastery.`,
   ];
 
-  // Brand hashtag FIRST, then content-specific
+  // Brand hashtag FIRST, then specific fashion tags
   const hashPool = [
-    `#${brand.replace(/\s+/g, '')}`,
-    `#${cleanTitle.replace(/\s+/g, '')}`,
-    '#Marketing', '#ContentStrategy', '#BrandIdentity'
+    `#${brandClean}`,
+    ...userTags.map(t => `#${t.replace(/\s+/g, '')}`),
+    '#EthnicWear',
+    '#GroomWear',
+    '#WeddingCollection',
+    '#TraditionalElegance',
+    '#MensFashion'
   ];
+  const uniqueHashtags = Array.from(new Set(hashPool)).slice(0, 6);
 
   return {
     product: cleanTitle,
     headline: headlines[randomIdx],
     description: copies[randomIdx % copies.length],
-    keywords: [cleanTitle.toLowerCase(), mediaType.toLowerCase(), brand.toLowerCase(), "social content"],
-    hashtags: hashPool.slice(0, 4),
-    mood: "modern and dynamic",
-    suggested_cta: workspace.cta || `Discover more at ${brand}`,
+    keywords: [cleanTitle.toLowerCase(), mediaType.toLowerCase(), brand.toLowerCase(), "menswear", "fashion"],
+    hashtags: uniqueHashtags,
+    mood: "regal and sophisticated",
+    suggested_cta: workspace?.cta || `Book Your Private Appointment at ${brand}`,
   };
 }
 
@@ -356,39 +368,44 @@ ${masterJsonSchemaInstruction()}`;
 
   // Prefer OpenAI direct → OpenRouter fallback for vision refinement
   let refined;
-  if (isConfiguredKey(process.env.OPENAI_API_KEY) && imageBuffer) {
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-    console.log(`[AI ENGINE] Image-aware fashion caption refinement via OpenAI (${model})...`);
-    refined = await requestOpenAIJson({ model, prompt, imageBuffer, mimeType, timeout: 35000 });
-  } else if (isConfiguredKey(process.env.OPENROUTER_API_KEY) && imageBuffer) {
-    const model = process.env.OPENROUTER_PRIMARY_MODEL || 'openai/gpt-4o-mini';
-    console.log(`[AI ENGINE] Image-aware fashion caption refinement via OpenRouter (${model})...`);
-    refined = await requestOpenRouterJson({ model, prompt, imageBuffer, mimeType, timeout: 35000 });
-  } else {
-    // Text fallback if image buffer unavailable
-    console.warn(`[AI ENGINE] Image buffer unavailable for media ${media.id}, falling back to text prompt refinement...`);
-    const fallbackPrompt = `${prompt}\n\nNote: Image buffer was unreadable in storage. Refine copy based on existing Master JSON facts and user tags/notes.`;
-    if (isConfiguredKey(process.env.OPENAI_API_KEY)) {
-      const model = process.env.OPENAI_REFINEMENT_MODEL || 'gpt-4o-mini';
-      const request = async (messages) => axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        { model, messages, response_format: { type: 'json_object' } },
-        { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY.trim()}`, 'Content-Type': 'application/json' }, timeout: 25000 }
-      );
-      const res = await request([{ role: 'user', content: fallbackPrompt }]);
-      refined = parseMasterJson(res.data?.choices?.[0]?.message?.content);
-    } else if (isConfiguredKey(process.env.OPENROUTER_API_KEY)) {
-      const model = process.env.OPENROUTER_REFINEMENT_MODEL || 'openai/gpt-4o-mini';
-      const request = async (messages) => axios.post(
-        'https://openrouter.ai/api/v1/chat/completions',
-        { model, messages, response_format: { type: 'json_object' } },
-        { headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY.trim()}`, 'Content-Type': 'application/json' }, timeout: 25000 }
-      );
-      const res = await request([{ role: 'user', content: fallbackPrompt }]);
-      refined = parseMasterJson(res.data?.choices?.[0]?.message?.content);
+  try {
+    if (isConfiguredKey(process.env.OPENAI_API_KEY) && imageBuffer) {
+      const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+      console.log(`[AI ENGINE] Image-aware fashion caption refinement via OpenAI (${model})...`);
+      refined = await requestOpenAIJson({ model, prompt, imageBuffer, mimeType, timeout: 35000 });
+    } else if (isConfiguredKey(process.env.OPENROUTER_API_KEY) && imageBuffer) {
+      const model = process.env.OPENROUTER_PRIMARY_MODEL || 'openai/gpt-4o-mini';
+      console.log(`[AI ENGINE] Image-aware fashion caption refinement via OpenRouter (${model})...`);
+      refined = await requestOpenRouterJson({ model, prompt, imageBuffer, mimeType, timeout: 35000 });
     } else {
-      throw new Error('No API key configured for caption refinement.');
+      // Text fallback if image buffer unavailable
+      console.warn(`[AI ENGINE] Image buffer unavailable for media ${media.id}, falling back to text prompt refinement...`);
+      const fallbackPrompt = `${prompt}\n\nNote: Image buffer was unreadable in storage. Refine copy based on existing Master JSON facts and user tags/notes.`;
+      if (isConfiguredKey(process.env.OPENAI_API_KEY)) {
+        const model = process.env.OPENAI_REFINEMENT_MODEL || 'gpt-4o-mini';
+        const request = async (messages) => axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          { model, messages, response_format: { type: 'json_object' } },
+          { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY.trim()}`, 'Content-Type': 'application/json' }, timeout: 25000 }
+        );
+        const res = await request([{ role: 'user', content: fallbackPrompt }]);
+        refined = parseMasterJson(res.data?.choices?.[0]?.message?.content);
+      } else if (isConfiguredKey(process.env.OPENROUTER_API_KEY)) {
+        const model = process.env.OPENROUTER_REFINEMENT_MODEL || 'openai/gpt-4o-mini';
+        const request = async (messages) => axios.post(
+          'https://openrouter.ai/api/v1/chat/completions',
+          { model, messages, response_format: { type: 'json_object' } },
+          { headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY.trim()}`, 'Content-Type': 'application/json' }, timeout: 25000 }
+        );
+        const res = await request([{ role: 'user', content: fallbackPrompt }]);
+        refined = parseMasterJson(res.data?.choices?.[0]?.message?.content);
+      } else {
+        throw new Error('No API key configured for caption refinement.');
+      }
     }
+  } catch (refineErr) {
+    console.warn(`[AI ENGINE] Vision/Text caption refinement failed (${refineErr.message}). Using tag-aware classic fashion generator...`);
+    refined = generateDynamicContent(media.filename, media.mediaType, brandVoice, emojiStyle, media.workspace, userTags, notes);
   }
 
   return parseMasterJson(JSON.stringify({
@@ -759,6 +776,7 @@ module.exports = {
   analyzeMedia,
   checkBatchCompletion,
   regenerateCaption,
+  generateDynamicContent,
   parseMasterJson,
   MASTER_JSON_FIELDS,
 };
