@@ -9,34 +9,43 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
 ];
 
-function getOAuthClient(req) {
-  const clientId = (process.env.GOOGLE_BUSINESS_CLIENT_ID || '923868252205-av81pctflf11v87pbfalj61dst7ibm8c.apps.googleusercontent.com').trim();
-  const clientSecret = (process.env.GOOGLE_BUSINESS_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET || '').trim();
+/**
+ * Returns canonical Google Business Profile OAuth configuration.
+ */
+function getGbpOAuthConfig() {
+  const clientId = (process.env.GOOGLE_BUSINESS_CLIENT_ID || '').trim();
+  const clientSecret = (process.env.GOOGLE_BUSINESS_CLIENT_SECRET || '').trim();
+  const redirectUri = (process.env.GOOGLE_BUSINESS_REDIRECT_URI || 'https://scheduler.zerodaycops.in/api/oauth/google-business/callback').trim();
 
-  // Enforce exact canonical redirect URI matching Google Cloud Console credentials
-  let redirectUri = (process.env.GOOGLE_BUSINESS_REDIRECT_URI || '').trim();
-  if (!redirectUri) {
-    if (req) {
-      const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-      const host = req.headers['x-forwarded-host'] || req.get('host') || 'scheduler.zerodaycops.in';
-      redirectUri = `${protocol}://${host}/api/oauth/google-business/callback`;
-    } else {
-      redirectUri = 'https://scheduler.zerodaycops.in/api/oauth/google-business/callback';
-    }
+  const isConfigured = !!(clientId && clientSecret && !clientId.includes('your-') && !clientSecret.includes('your-'));
+
+  return {
+    clientId,
+    clientSecret,
+    redirectUri,
+    isConfigured,
+  };
+}
+
+function getOAuthClient() {
+  const config = getGbpOAuthConfig();
+
+  if (!config.isConfigured) {
+    throw new Error('Google Business Profile OAuth credentials (GOOGLE_BUSINESS_CLIENT_ID & GOOGLE_BUSINESS_CLIENT_SECRET) are missing or incomplete in environment configuration.');
   }
 
-  if (!clientId || !clientSecret) {
-    throw new Error('Google Business Profile OAuth credentials (GOOGLE_BUSINESS_CLIENT_ID & GOOGLE_BUSINESS_CLIENT_SECRET) are not configured.');
-  }
-
-  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+  return new google.auth.OAuth2(config.clientId, config.clientSecret, config.redirectUri);
 }
 
 /**
-  * Generates Google OAuth authorization URL for GBP
-  */
-function getAuthUrl(state, req) {
-  const oauth2Client = getOAuthClient(req);
+ * Generates Google OAuth authorization URL for GBP with state token.
+ */
+function getAuthUrl(state) {
+  const oauth2Client = getOAuthClient();
+  const config = getGbpOAuthConfig();
+
+  console.log(`[GBP OAUTH] Generating Auth URL with Client ID (${config.clientId.substring(0, 12)}...) and Redirect URI (${config.redirectUri})`);
+
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
@@ -48,8 +57,8 @@ function getAuthUrl(state, req) {
 /**
  * Exchanges authorization code for tokens, discovers account info, and stores GoogleConnection record
  */
-async function handleOAuthCallback(code, req) {
-  const oauth2Client = getOAuthClient(req);
+async function handleOAuthCallback(code) {
+  const oauth2Client = getOAuthClient();
   const { tokens } = await oauth2Client.getToken(code);
   oauth2Client.setCredentials(tokens);
 
@@ -314,6 +323,7 @@ async function createLocalPost(locationId, postContent, mediaUrl, ctaUrl, ctaAct
 }
 
 module.exports = {
+  getGbpOAuthConfig,
   getAuthUrl,
   handleOAuthCallback,
   getValidAccessToken,

@@ -103,12 +103,30 @@ export const SettingsView: React.FC = () => {
   // Check URL query parameters for connection outcome messages
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const errorParam = params.get('error') || params.get('error_description');
+    const errorParam = params.get('error');
+    const errorDesc = params.get('error_description');
     const successParam = params.get('connected');
+    const gbpConnected = params.get('gbpConnected');
+    const locCount = params.get('locationsCount');
 
     if (errorParam) {
-      setToast({ type: 'error', message: `OAuth Error: ${errorParam}` });
+      let friendlyMessage = `OAuth Error: ${errorParam}`;
+      if (errorParam === 'invalid_client') {
+        friendlyMessage = 'Google OAuth Client ID or Client Secret configured on Render server is invalid or unapproved. Please update credentials in Render settings.';
+      } else if (errorParam === 'redirect_uri_mismatch') {
+        friendlyMessage = 'Google Redirect URI mismatch. Ensure "https://scheduler.zerodaycops.in/api/oauth/google-business/callback" is registered under Authorized Redirect URIs in Google Cloud Console.';
+      } else if (errorParam === 'access_denied') {
+        friendlyMessage = 'Google Business Profile authorization was cancelled or denied.';
+      } else if (errorDesc) {
+        friendlyMessage = `OAuth Error: ${errorParam} — ${errorDesc}`;
+      }
+
+      setToast({ type: 'error', message: friendlyMessage });
       window.history.replaceState({}, '', window.location.pathname);
+    } else if (gbpConnected === 'true') {
+      setToast({ type: 'success', message: `Google Business Profile connected! ${locCount || 0} location(s) discovered.` });
+      window.history.replaceState({}, '', window.location.pathname);
+      queryClient.invalidateQueries({ queryKey: ['workspace', currentWorkspace?.id] });
     } else if (successParam) {
       setToast({ type: 'success', message: `Successfully connected ${successParam}!` });
       window.history.replaceState({}, '', window.location.pathname);

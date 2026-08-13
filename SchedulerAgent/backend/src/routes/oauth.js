@@ -16,8 +16,13 @@ function getRedirectUriBase(req) {
   return `${protocol}://${host}/api/oauth`;
 }
 
+const { createOAuthState, verifyOAuthState } = require('../utils/oauth-state');
+
 // Helper to determine if credentials are configured
 function isConfigured(platform) {
+  if (platform.toUpperCase() === 'GOOGLE_BUSINESS') {
+    return gbpService.getGbpOAuthConfig().isConfigured;
+  }
   const envPrefix = platform.toUpperCase();
   const id = process.env[`${envPrefix}_CLIENT_ID`];
   const secret = process.env[`${envPrefix}_CLIENT_SECRET`];
@@ -27,7 +32,7 @@ function isConfigured(platform) {
 
 /**
  * GET /api/oauth/config-status
- * Returns whether LinkedIn, Pinterest, and YouTube credentials are configured.
+ * Returns whether LinkedIn, Pinterest, YouTube, and Google Business credentials are configured.
  */
 router.get('/config-status', requireAuth, (req, res) => {
   res.json({
@@ -35,7 +40,7 @@ router.get('/config-status', requireAuth, (req, res) => {
       LINKEDIN: isConfigured('LINKEDIN'),
       PINTEREST: isConfigured('PINTEREST'),
       YOUTUBE: isConfigured('YOUTUBE'),
-      GOOGLE_BUSINESS: isConfigured('GOOGLE_BUSINESS') || isConfigured('YOUTUBE'),
+      GOOGLE_BUSINESS: isConfigured('GOOGLE_BUSINESS'),
     }
   });
 });
@@ -43,8 +48,25 @@ router.get('/config-status', requireAuth, (req, res) => {
 const gbpService = require('../services/google-business');
 
 /**
+ * GET /api/oauth/google-business/health
+ * Safe diagnostic endpoint returning Google Business Profile configuration status without secrets.
+ */
+router.get('/google-business/health', requireAuth, (req, res) => {
+  const config = gbpService.getGbpOAuthConfig();
+  res.json({
+    configured: config.isConfigured,
+    clientIdConfigured: !!config.clientId,
+    clientIdFingerprint: config.clientId ? `${config.clientId.substring(0, 12)}...` : null,
+    clientSecretConfigured: !!config.clientSecret,
+    redirectUriConfigured: !!config.redirectUri,
+    redirectUri: config.redirectUri,
+    environment: process.env.NODE_ENV || 'production',
+  });
+});
+
+/**
  * GET /api/oauth/google-business/connect
- * Starts Google Business Profile OAuth flow
+ * Starts Google Business Profile OAuth flow with HMAC-signed state.
  */
 router.get('/google-business/connect', requireAuth, async (req, res) => {
   try {
@@ -52,8 +74,8 @@ router.get('/google-business/connect', requireAuth, async (req, res) => {
     if (!workspaceId) {
       return res.status(400).json({ error: 'workspaceId query parameter is required' });
     }
-    const state = JSON.stringify({ workspaceId, userId: req.userId });
-    const url = gbpService.getAuthUrl(state, req);
+    const stateToken = createOAuthState(workspaceId, req.userId);
+    const url = gbpService.getAuthUrl(stateToken);
     res.redirect(url);
   } catch (err) {
     console.error('[GBP OAUTH CONNECT ERROR]:', err.message);
@@ -63,20 +85,21 @@ router.get('/google-business/connect', requireAuth, async (req, res) => {
 
 /**
  * GET /api/oauth/google-business/callback
- * Handles Google Business Profile OAuth redirect callback
+ * Handles Google Business Profile OAuth redirect callback with HMAC state verification.
  */
 router.get('/google-business/callback', async (req, res) => {
   try {
-    const { code, state, error } = req.query;
+    const { code, state, error, error_description } = req.query;
     if (error) {
-      return res.redirect(`/settings?error=${encodeURIComponent(error)}#connections`);
+      console.error(`[GBP OAUTH CALLBACK ERROR] Provider returned error: ${error} — ${error_description}`);
+      return res.redirect(`/settings?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(error_description || '')}#connections`);
     }
     if (!code) {
       return res.redirect('/settings?error=No+code+provided#connections');
     }
 
-    const { workspaceId } = JSON.parse(state || '{}');
-    const { connection, locations } = await gbpService.handleOAuthCallback(code, req);
+    const { workspaceId } = verifyOAuthState(state);
+    const { connection, locations } = await gbpService.handleOAuthCallback(code);
 
     // Auto-link discovered locations to the workspace
     if (workspaceId && locations.length > 0) {
