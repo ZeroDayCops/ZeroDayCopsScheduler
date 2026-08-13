@@ -127,15 +127,18 @@ const AppContent: React.FC = () => {
         <Route path="*" element={<NotFoundPage />} />
       </Route>
 
-      {/* Protected dashboard route — no PublicLayout, uses MainLayout's own sidebar */}
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            <MainLayout />
-          </ProtectedRoute>
-        }
-      />
+      {/* Protected application routes — no PublicLayout, uses MainLayout's own sidebar */}
+      {['/dashboard', '/settings', '/media', '/planner', '/calendar'].map((path) => (
+        <Route
+          key={path}
+          path={path}
+          element={
+            <ProtectedRoute>
+              <MainLayout />
+            </ProtectedRoute>
+          }
+        />
+      ))}
     </Routes>
   );
 };

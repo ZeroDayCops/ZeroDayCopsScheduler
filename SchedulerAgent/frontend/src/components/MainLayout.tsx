@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { fetchApi } from '../lib/api';
 import { Badge } from './ui/Badge';
@@ -33,6 +34,8 @@ const SuspenseFallback = () => (
 );
 
 export const MainLayout: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const { user, organizations, currentOrg, setCurrentOrg, workspaces, currentWorkspace, setCurrentWorkspace, activeTab, setActiveTab, logout } = useApp();
   const [showOrgDd, setShowOrgDd] = useState(false);
   const [showWsDd, setShowWsDd] = useState(false);
@@ -119,15 +122,25 @@ export const MainLayout: React.FC = () => {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Escape key closes
+  // Synchronize activeTab state with URL route (e.g. /settings -> 'settings')
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { setShowOrgDd(false); setShowWsDd(false); setShowNotifDd(false); } };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, []);
+    const rawPath = location.pathname.replace(/^\//, '');
+    if (rawPath) {
+      const tabName = rawPath === 'planner' ? 'calendar' : rawPath;
+      if (['settings', 'media', 'calendar', 'dashboard'].includes(tabName) && tabName !== activeTab) {
+        setActiveTab(tabName);
+      }
+    }
+  }, [location.pathname]);
 
   const closeDropdowns = () => { setShowOrgDd(false); setShowWsDd(false); setShowNotifDd(false); };
-  const switchTab = (tab: string) => { setActiveTab(tab); closeDropdowns(); };
+  const switchTab = (tab: string) => {
+    setActiveTab(tab);
+    closeDropdowns();
+    if (location.pathname !== `/${tab}`) {
+      navigate(`/${tab}${window.location.search}${window.location.hash}`);
+    }
+  };
 
   const handleActionClick = (url?: string) => {
     if (!url) return;
