@@ -173,6 +173,7 @@ async function discoverLocationsForConnection(connectionId) {
   const authHeaders = { Authorization: `Bearer ${accessToken}` };
 
   let discoveredAccounts = [];
+  let apiErrors = [];
 
   // Step 1: List all accessible Google Business Profile accounts
   try {
@@ -186,7 +187,12 @@ async function discoverLocationsForConnection(connectionId) {
       nextToken = res.data?.nextPageToken || null;
     } while (nextToken);
   } catch (accErr) {
-    console.warn('[GOOGLE BUSINESS] Account discovery warning:', accErr.response?.data || accErr.message);
+    const errData = accErr.response?.data?.error;
+    const msg = errData?.message || accErr.message;
+    console.warn('[GOOGLE BUSINESS] Account discovery warning:', msg);
+    if (accErr.response?.status === 403 || accErr.response?.status === 429) {
+      apiErrors.push(`Account Management API: ${msg}`);
+    }
     // Fallback if user account itself is a direct location container
     discoveredAccounts.push({ name: `accounts/${connection.googleAccountId}` });
   }
@@ -246,7 +252,22 @@ async function discoverLocationsForConnection(connectionId) {
         pageToken = res.data?.nextPageToken || null;
       } while (pageToken);
     } catch (locErr) {
-      console.warn(`[GOOGLE BUSINESS] Location discovery warning for account ${accountName}:`, locErr.response?.data || locErr.message);
+      const errData = locErr.response?.data?.error;
+      const msg = errData?.message || locErr.message;
+      console.warn(`[GOOGLE BUSINESS] Location discovery warning for account ${accountName}:`, msg);
+      if (locErr.response?.status === 403 || locErr.response?.status === 429) {
+        apiErrors.push(`Business Information API (${accountName}): ${msg}`);
+      }
+    }
+  }
+
+  if (discoveredLocations.length === 0 && apiErrors.length > 0) {
+    const combinedError = apiErrors.join(' | ');
+    if (combinedError.includes('has not been used in project') || combinedError.includes('is disabled')) {
+      throw new Error('Google Business Profile API is disabled in GCP Project 923868252205. Enable "My Business Account Management API" and "My Business Business Information API" in Google Cloud Console.');
+    }
+    if (combinedError.includes('Quota exceeded') || combinedError.includes('RESOURCE_EXHAUSTED')) {
+      throw new Error('Google Business Profile API quota limit reached or unapproved in GCP Project 923868252205. Enable APIs in Google Cloud Console.');
     }
   }
 
