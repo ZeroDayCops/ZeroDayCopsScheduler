@@ -2,8 +2,8 @@ const axios = require('axios');
 const prisma = require('../prisma');
 const { encrypt, decrypt } = require('../utils/crypto');
 
-const INSTAGRAM_GRAPH_BASE = 'https://graph.instagram.com';
-const INSTAGRAM_OAUTH_BASE = 'https://api.instagram.com/oauth';
+const META_GRAPH_BASE = 'https://graph.facebook.com/v20.0';
+const META_OAUTH_BASE = 'https://www.facebook.com/v20.0/dialog';
 
 function getInstagramAuthConfig() {
   const clientId = (process.env.INSTAGRAM_CLIENT_ID || process.env.FACEBOOK_APP_ID || '1076195244968677').trim();
@@ -21,20 +21,21 @@ function getInstagramAuthConfig() {
 }
 
 /**
- * Generates official Instagram OAuth authorization URL
+ * Generates official Meta Instagram Business Login OAuth authorization URL
  */
 function getInstagramAuthUrl(state) {
   const config = getInstagramAuthConfig();
   if (!config.isConfigured) {
-    throw new Error('Instagram Client ID and Secret are not configured.');
+    throw new Error('INSTAGRAM_OAUTH_CONFIGURATION_ERROR: Client ID or Secret missing.');
   }
 
-  // Official Instagram API with Instagram Login scopes (Architecture A)
+  // Business Login for Instagram Graph API permissions
   const scopes = [
-    'instagram_business_basic',
-    'instagram_business_content_publish',
-    'instagram_business_manage_comments',
-    'instagram_business_manage_messages',
+    'instagram_basic',
+    'instagram_content_publish',
+    'pages_show_list',
+    'pages_read_engagement',
+    'business_management',
   ];
 
   const queryParams = new URLSearchParams({
@@ -45,9 +46,7 @@ function getInstagramAuthUrl(state) {
     state,
   });
 
-  // Use official Instagram Business Login OAuth endpoint
-  const baseAuthUrl = process.env.INSTAGRAM_AUTH_URL || 'https://www.instagram.com/oauth/authorize';
-  return `${baseAuthUrl}?${queryParams.toString()}`;
+  return `${META_OAUTH_BASE}/oauth?${queryParams.toString()}`;
 }
 
 /**
@@ -57,23 +56,9 @@ async function handleInstagramOAuthCallback(code, userId = null) {
   const config = getInstagramAuthConfig();
 
   // Step 1: Exchange authorization code for short-lived access token
-  const bodyParams = new URLSearchParams({
-    client_id: config.clientId,
-    client_secret: config.clientSecret,
-    grant_type: 'authorization_code',
-    redirect_uri: config.redirectUri,
-    code,
-  });
-
   let tokenRes;
   try {
-    tokenRes = await axios.post(`${INSTAGRAM_OAUTH_BASE}/access_token`, bodyParams, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
-  } catch (err) {
-    console.error('[INSTAGRAM OAUTH TOKEN EXCHANGE ERROR]:', err.response?.data || err.message);
-    // Fallback attempt to Meta Graph Token endpoint if Instagram API returns 400 with Meta App credentials
-    tokenRes = await axios.get(`https://graph.facebook.com/v20.0/oauth/access_token`, {
+    tokenRes = await axios.get(`${META_GRAPH_BASE}/oauth/access_token`, {
       params: {
         client_id: config.clientId,
         client_secret: config.clientSecret,
@@ -81,21 +66,28 @@ async function handleInstagramOAuthCallback(code, userId = null) {
         code,
       },
     });
+  } catch (err) {
+    console.error('[INSTAGRAM TOKEN EXCHANGE ERROR]:', err.response?.data || err.message);
+    const errorDetails = err.response?.data?.error?.message || err.message;
+    throw new Error(`INSTAGRAM_TOKEN_EXCHANGE_FAILED: ${errorDetails}`);
   }
 
   const accessToken = tokenRes.data.access_token;
-  const instagramUserId = String(tokenRes.data.user_id || tokenRes.data.id || '');
+  if (!accessToken) {
+    throw new Error('INSTAGRAM_TOKEN_EXCHANGE_FAILED: No access token received from Meta.');
+  }
 
   // Step 2: Exchange for long-lived access token (60 days)
   let longLivedToken = accessToken;
   let expiresAt = new Date(Date.now() + 60 * 86400 * 1000); // Default 60 days
 
   try {
-    const longLivedRes = await axios.get(`${INSTAGRAM_GRAPH_BASE}/access_token`, {
+    const longLivedRes = await axios.get(`${META_GRAPH_BASE}/oauth/access_token`, {
       params: {
-        grant_type: 'ig_exchange_token',
+        grant_type: 'fb_exchange_token',
+        client_id: config.clientId,
         client_secret: config.clientSecret,
-        access_token: accessToken,
+        fb_exchange_token: accessToken,
       },
     });
     if (longLivedRes.data?.access_token) {
@@ -108,24 +100,53 @@ async function handleInstagramOAuthCallback(code, userId = null) {
     console.warn('[INSTAGRAM LONG LIVED TOKEN WARNING]:', longLivedErr.response?.data?.error?.message || longLivedErr.message);
   }
 
-  // Step 3: Fetch Instagram User Profile
-  let username = `ig_user_${instagramUserId}`;
+  // Step 3: Discover Connected Instagram Professional Accounts via Graph API
+  let instagramUserId = null;
+  let username = null;
   let name = null;
   let profilePictureUrl = null;
 
   try {
-    const profileRes = await axios.get(`${INSTAGRAM_GRAPH_BASE}/me`, {
+    // Query accounts with connected Instagram Business Accounts
+    const accountsRes = await axios.get(`${META_GRAPH_BASE}/me/accounts`, {
       params: {
-        fields: 'id,username,account_type',
+        fields: 'id,name,instagram_business_account{id,username,name,profile_picture_url}',
         access_token: longLivedToken,
       },
     });
-    username = profileRes.data.username || username;
+
+    const pages = accountsRes.data?.data || [];
+    // Find the first page with a linked Instagram Business Account
+    const igAccountObj = pages.find(p => p.instagram_business_account)?.instagram_business_account;
+
+    if (igAccountObj) {
+      instagramUserId = igAccountObj.id;
+      username = igAccountObj.username;
+      name = igAccountObj.name || igAccountObj.username;
+      profilePictureUrl = igAccountObj.profile_picture_url || null;
+    } else {
+      // Direct Instagram Graph API fallback
+      const meRes = await axios.get(`https://graph.instagram.com/me`, {
+        params: {
+          fields: 'id,username,account_type',
+          access_token: longLivedToken,
+        },
+      });
+      instagramUserId = meRes.data.id;
+      username = meRes.data.username;
+      name = meRes.data.username;
+    }
   } catch (profErr) {
-    console.warn('[INSTAGRAM PROFILE FETCH WARNING]:', profErr.response?.data || profErr.message);
+    console.warn('[INSTAGRAM ACCOUNT LOOKUP WARNING]:', profErr.response?.data || profErr.message);
   }
 
-  // Step 4: Upsert InstagramConnection (1 per user constraint)
+  if (!instagramUserId) {
+    // Fallback ID generation to prevent null constraint error
+    instagramUserId = `ig_user_${Date.now()}`;
+    username = username || `instagram_user_${instagramUserId.slice(-6)}`;
+  }
+
+  // Step 4: Upsert InstagramConnection (Max 1 per user constraint)
   let existingConn = null;
   if (userId) {
     existingConn = await prisma.instagramConnection.findUnique({ where: { userId } });
@@ -137,7 +158,7 @@ async function handleInstagramOAuthCallback(code, userId = null) {
       where: { id: existingConn.id },
       data: {
         userId: userId || existingConn.userId,
-        instagramUserId: instagramUserId || existingConn.instagramUserId,
+        instagramUserId,
         instagramName: username,
         accessTokenEncrypted: encrypt(longLivedToken),
         expiresAt,
@@ -159,7 +180,7 @@ async function handleInstagramOAuthCallback(code, userId = null) {
 
   // Step 5: Upsert EXACTLY 1 InstagramAccount for this InstagramConnection
   const account = await prisma.instagramAccount.upsert({
-    where: { instagramAccountId: instagramUserId || `ig-account-${connection.id}` },
+    where: { instagramAccountId: instagramUserId },
     update: {
       username,
       name: name || username,
@@ -168,7 +189,7 @@ async function handleInstagramOAuthCallback(code, userId = null) {
       status: 'CONNECTED',
     },
     create: {
-      instagramAccountId: instagramUserId || `ig-account-${connection.id}`,
+      instagramAccountId: instagramUserId,
       username,
       name: name || username,
       profilePictureUrl,
