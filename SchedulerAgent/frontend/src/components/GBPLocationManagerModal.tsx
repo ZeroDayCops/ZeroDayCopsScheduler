@@ -86,6 +86,40 @@ export const GBPLocationManagerModal: React.FC<GBPLocationManagerModalProps> = (
     }
   };
 
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualName, setManualName] = useState('');
+  const [manualAddress, setManualAddress] = useState('');
+  const [manualLocId, setManualLocId] = useState('');
+  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
+
+  const handleAddManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualName.trim()) return;
+    setIsSubmittingManual(true);
+    setMessage(null);
+    try {
+      await fetchApi(`/workspaces/${workspaceId}/gbp-locations/manual`, {
+        method: 'POST',
+        body: JSON.stringify({
+          locationName: manualName,
+          address: manualAddress,
+          googleLocationId: manualLocId || undefined,
+        }),
+      });
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: ['workspace', workspaceId] });
+      setMessage(`Added location "${manualName}" successfully!`);
+      setManualName('');
+      setManualAddress('');
+      setManualLocId('');
+      setShowManualForm(false);
+    } catch (err: any) {
+      setMessage(`Failed to add location: ${err.message}`);
+    } finally {
+      setIsSubmittingManual(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <div className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl border border-white/10 bg-[#0b101d] shadow-2xl overflow-hidden">
@@ -105,7 +139,7 @@ export const GBPLocationManagerModal: React.FC<GBPLocationManagerModalProps> = (
           </button>
         </div>
 
-        {/* Filter Bar */}
+        {/* Filter & Action Bar */}
         <div className="p-4 border-b border-white/5 bg-slate-900/50 flex gap-3 items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
@@ -117,7 +151,44 @@ export const GBPLocationManagerModal: React.FC<GBPLocationManagerModalProps> = (
               className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-white/10 bg-slate-900 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-indigo-500"
             />
           </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setShowManualForm(!showManualForm)}
+            className="text-xs"
+          >
+            {showManualForm ? 'Cancel' : '+ Add Location'}
+          </Button>
         </div>
+
+        {/* Manual Location Form */}
+        {showManualForm && (
+          <form onSubmit={handleAddManual} className="p-4 border-b border-emerald-500/20 bg-emerald-500/5 space-y-3">
+            <div className="text-xs font-bold text-emerald-300">Add Location Manually</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input
+                type="text"
+                value={manualName}
+                onChange={e => setManualName(e.target.value)}
+                placeholder="Business / Store Name *"
+                required
+                className="px-3 py-1.5 rounded-lg border border-white/10 bg-slate-900 text-xs text-slate-200 outline-none focus:border-emerald-500"
+              />
+              <input
+                type="text"
+                value={manualAddress}
+                onChange={e => setManualAddress(e.target.value)}
+                placeholder="Address (Optional)"
+                className="px-3 py-1.5 rounded-lg border border-white/10 bg-slate-900 text-xs text-slate-200 outline-none focus:border-emerald-500"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="primary" type="submit" isLoading={isSubmittingManual} className="bg-emerald-600 hover:bg-emerald-500 text-xs">
+                Save & Link Location
+              </Button>
+            </div>
+          </form>
+        )}
 
         {/* Notification Toast Message */}
         {message && (

@@ -816,4 +816,68 @@ router.post('/:id/gbp-locations/toggle', requireAuth, requireWorkspaceAccess, as
   }
 });
 
+/**
+ * POST /api/workspaces/:id/gbp-locations/manual
+ * Manually creates and links a GoogleBusinessLocation to this workspace (fallback for quota/API access approval)
+ */
+router.post('/:id/gbp-locations/manual', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const workspaceId = req.params.id;
+    const { locationName, googleLocationId, address } = req.body || {};
+
+    if (!locationName) {
+      return res.status(400).json({ error: 'Location Name is required' });
+    }
+
+    // Get latest active GoogleConnection
+    const connection = await prisma.googleConnection.findFirst({
+      where: { status: 'CONNECTED' },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!connection) {
+      return res.status(400).json({ error: 'Please connect a Google account first.' });
+    }
+
+    const finalLocId = (googleLocationId || `locations/manual-${Date.now()}`).trim();
+
+    const savedLoc = await prisma.googleBusinessLocation.upsert({
+      where: { googleLocationId: finalLocId },
+      update: {
+        locationName: locationName.trim(),
+        address: address ? address.trim() : null,
+        status: 'CONNECTED',
+      },
+      create: {
+        googleConnectionId: connection.id,
+        googleAccountId: connection.googleAccountId,
+        googleLocationId: finalLocId,
+        locationName: locationName.trim(),
+        address: address ? address.trim() : null,
+        status: 'CONNECTED',
+      },
+    });
+
+    // Link to workspace
+    await prisma.workspaceGoogleLocation.upsert({
+      where: {
+        workspaceId_googleBusinessLocationId: {
+          workspaceId,
+          googleBusinessLocationId: savedLoc.id,
+        },
+      },
+      update: {},
+      create: {
+        workspaceId,
+        googleBusinessLocationId: savedLoc.id,
+      },
+    });
+
+    res.json({ success: true, location: savedLoc });
+  } catch (err) {
+    console.error('[WORKSPACE GBP MANUAL LOCATION ERROR]:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to manually add location' });
+  }
+});
+
 module.exports = router;
