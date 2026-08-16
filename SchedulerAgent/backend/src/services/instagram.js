@@ -29,16 +29,12 @@ function getInstagramAuthUrl(state) {
     throw new Error('Instagram Client ID and Secret are not configured.');
   }
 
-  // Official Instagram Graph API / Instagram Business Login scopes
+  // Official Instagram API with Instagram Login scopes (Architecture A)
   const scopes = [
-    'instagram_basic',
-    'instagram_content_publish',
-    'instagram_manage_comments',
-    'instagram_manage_insights',
-    'pages_show_list',
-    'pages_read_engagement',
-    'public_profile',
-    'business_management',
+    'instagram_business_basic',
+    'instagram_business_content_publish',
+    'instagram_business_manage_comments',
+    'instagram_business_manage_messages',
   ];
 
   const queryParams = new URLSearchParams({
@@ -46,7 +42,7 @@ function getInstagramAuthUrl(state) {
     redirect_uri: config.redirectUri,
     scope: scopes.join(','),
     response_type: 'code',
-    state: `ig_${state}`,
+    state,
   });
 
   // Use official Instagram Business Login OAuth endpoint
