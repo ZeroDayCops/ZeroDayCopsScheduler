@@ -14,15 +14,17 @@ import {
 } from 'lucide-react';
 
 import { GBPLocationManagerModal } from './GBPLocationManagerModal';
+import { FacebookPageManagerModal } from './FacebookPageManagerModal';
 
-const PLATFORM_NAMES: Record<string, string> = { LINKEDIN: 'LinkedIn', PINTEREST: 'Pinterest', YOUTUBE: 'YouTube', GOOGLE_BUSINESS: 'Google Business Profile' };
-const PLATFORM_COLORS: Record<string, string> = { LINKEDIN: 'text-blue-400', PINTEREST: 'text-pink-500', YOUTUBE: 'text-red-400', GOOGLE_BUSINESS: 'text-emerald-400' };
+const PLATFORM_NAMES: Record<string, string> = { LINKEDIN: 'LinkedIn', PINTEREST: 'Pinterest', YOUTUBE: 'YouTube', GOOGLE_BUSINESS: 'Google Business Profile', FACEBOOK: 'Facebook Pages' };
+const PLATFORM_COLORS: Record<string, string> = { LINKEDIN: 'text-blue-400', PINTEREST: 'text-pink-500', YOUTUBE: 'text-red-400', GOOGLE_BUSINESS: 'text-emerald-400', FACEBOOK: 'text-blue-400' };
 
 export const SettingsView: React.FC = () => {
   const { currentWorkspace, setCurrentWorkspace } = useApp();
   const queryClient = useQueryClient();
 
   const [showGBPModal, setShowGBPModal] = useState(false);
+  const [showFBModal, setShowFBModal] = useState(false);
 
   // React Query for fresh workspace data — refetch automatically
   const wsQuery = useQuery({
@@ -386,6 +388,39 @@ export const SettingsView: React.FC = () => {
               </Button>
             </div>
           </div>
+
+          {/* Facebook Pages Connection Card */}
+          <div className="border border-white/5 rounded-xl p-4 space-y-3 bg-[#080d16]/50">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-blue-400">Facebook Pages</span>
+              <Badge type={freshWs?.facebookPages?.length > 0 ? 'CONNECTED' : 'NOT_CONNECTED'} />
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Publish image and video posts to connected Facebook Pages & Instagram Business accounts.
+            </p>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button
+                variant="primary"
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
+                onClick={() => {
+                  window.location.href = `${API_BASE}/oauth/facebook/connect?workspaceId=${currentWorkspace?.id}`;
+                }}
+              >
+                Connect Facebook Account
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Building className="w-3.5 h-3.5" />}
+                onClick={() => setShowFBModal(true)}
+              >
+                Manage Pages ({freshWs?.facebookPages?.length || 0})
+              </Button>
+            </div>
+          </div>
         </Card>
       </div>
 
@@ -394,6 +429,14 @@ export const SettingsView: React.FC = () => {
           workspaceId={currentWorkspace.id}
           workspaceName={currentWorkspace.brandName}
           onClose={() => setShowGBPModal(false)}
+        />
+      )}
+
+      {showFBModal && currentWorkspace && (
+        <FacebookPageManagerModal
+          workspaceId={currentWorkspace.id}
+          workspaceName={currentWorkspace.brandName}
+          onClose={() => setShowFBModal(false)}
         />
       )}
 

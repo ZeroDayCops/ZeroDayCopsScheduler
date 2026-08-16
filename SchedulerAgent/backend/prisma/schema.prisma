@@ -23,6 +23,8 @@ enum Platform {
   PINTEREST
   YOUTUBE
   GOOGLE_BUSINESS
+  FACEBOOK
+  INSTAGRAM
 }
 
 enum SocialAccountStatus {
@@ -116,6 +118,7 @@ model Workspace {
   workspaceAccess         WorkspaceAccess[]
   socialAccounts          SocialAccount[]
   googleLocations         WorkspaceGoogleLocation[]
+  facebookPages           WorkspaceFacebookPage[]
   media                   Media[]
   templates               Template[]
   scheduledPosts          ScheduledPost[]
@@ -341,5 +344,44 @@ model Notification {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, createdAt])
+}
+
+// ─── FacebookConnection & FacebookPage (Facebook / Instagram API) ──
+
+model FacebookConnection {
+  id                    String              @id @default(uuid())
+  facebookUserId        String              @unique
+  facebookName          String?
+  accessTokenEncrypted  String
+  expiresAt             DateTime?
+  status                SocialAccountStatus @default(CONNECTED)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  pages                 FacebookPage[]
+}
+
+model FacebookPage {
+  id                       String                 @id @default(uuid())
+  facebookConnectionId     String
+  facebookPageId           String                 @unique // e.g. "111806778515761"
+  pageName                 String                 // e.g. "Devloperbhauu"
+  pageAccessTokenEncrypted String
+  instagramBusinessAccountId String?               // e.g. "178414..."
+  status                   SocialAccountStatus    @default(CONNECTED)
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  facebookConnection       FacebookConnection     @relation(fields: [facebookConnectionId], references: [id], onDelete: Cascade)
+  workspacePages           WorkspaceFacebookPage[]
+}
+
+model WorkspaceFacebookPage {
+  id             String       @id @default(uuid())
+  workspaceId    String
+  facebookPageId String
+  createdAt      DateTime     @default(now())
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  facebookPage   FacebookPage @relation(fields: [facebookPageId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, facebookPageId])
 }
 

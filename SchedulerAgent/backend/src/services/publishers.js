@@ -536,6 +536,17 @@ async function publishToPlatform(post, decryptedToken, media) {
           post.renderedContent?.ctaUrl || activeMedia.destinationUrl,
           post.renderedContent?.ctaAction || 'LEARN_MORE'
         );
+      case 'FACEBOOK':
+        const fbService = require('./facebook');
+        if (!post.facebookPageId) {
+          throw new Error('facebookPageId is required for Facebook Page post.');
+        }
+        return await fbService.createPagePost(
+          post.facebookPageId,
+          post.renderedContent,
+          activeMedia.r2Url,
+          activeMedia.destinationUrl
+        );
       default:
         return {
           success: false,

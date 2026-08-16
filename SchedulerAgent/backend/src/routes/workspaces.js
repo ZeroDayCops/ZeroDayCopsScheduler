@@ -880,4 +880,89 @@ router.post('/:id/gbp-locations/manual', requireAuth, requireWorkspaceAccess, as
   }
 });
 
+/**
+ * GET /api/workspaces/:id/facebook-pages
+ * Fetches all discovered Facebook Pages and indicates which ones are linked to this workspace
+ */
+router.get('/:id/facebook-pages', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const workspaceId = req.params.id;
+    const connections = await prisma.facebookConnection.findMany({
+      include: {
+        pages: {
+          include: {
+            workspacePages: {
+              where: { workspaceId },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const formattedConnections = connections.map(conn => ({
+      id: conn.id,
+      facebookName: conn.facebookName,
+      facebookUserId: conn.facebookUserId,
+      status: conn.status,
+      pages: conn.pages.map(p => ({
+        id: p.id,
+        facebookPageId: p.facebookPageId,
+        pageName: p.pageName,
+        instagramBusinessAccountId: p.instagramBusinessAccountId,
+        status: p.status,
+        isLinked: p.workspacePages.length > 0,
+      })),
+    }));
+
+    res.json({ connections: formattedConnections });
+  } catch (err) {
+    console.error('[WORKSPACE FB PAGES ERROR]:', err.message);
+    res.status(500).json({ error: 'Failed to fetch workspace Facebook pages' });
+  }
+});
+
+/**
+ * POST /api/workspaces/:id/facebook-pages/toggle
+ * Links or unlinks a FacebookPage to this workspace
+ */
+router.post('/:id/facebook-pages/toggle', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const workspaceId = req.params.id;
+    const { facebookPageId, enable } = req.body || {};
+
+    if (!facebookPageId) {
+      return res.status(400).json({ error: 'facebookPageId is required' });
+    }
+
+    if (enable) {
+      await prisma.workspaceFacebookPage.upsert({
+        where: {
+          workspaceId_facebookPageId: {
+            workspaceId,
+            facebookPageId,
+          },
+        },
+        update: {},
+        create: {
+          workspaceId,
+          facebookPageId,
+        },
+      });
+    } else {
+      await prisma.workspaceFacebookPage.deleteMany({
+        where: {
+          workspaceId,
+          facebookPageId,
+        },
+      });
+    }
+
+    res.json({ success: true, workspaceId, facebookPageId, isLinked: !!enable });
+  } catch (err) {
+    console.error('[WORKSPACE FB TOGGLE ERROR]:', err.message);
+    res.status(500).json({ error: 'Failed to update workspace Facebook page mapping' });
+  }
+});
+
 module.exports = router;
