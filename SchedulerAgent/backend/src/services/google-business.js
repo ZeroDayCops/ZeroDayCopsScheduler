@@ -262,13 +262,12 @@ async function discoverLocationsForConnection(connectionId) {
   }
 
   if (discoveredLocations.length === 0 && apiErrors.length > 0) {
-    const combinedError = apiErrors.join(' | ');
-    if (combinedError.includes('has not been used in project') || combinedError.includes('is disabled')) {
-      throw new Error('Google Business Profile API is disabled in GCP Project 923868252205. Enable "My Business Account Management API" and "My Business Business Information API" in Google Cloud Console.');
-    }
-    if (combinedError.includes('Quota exceeded') || combinedError.includes('RESOURCE_EXHAUSTED')) {
-      throw new Error('Google Business Profile API quota limit reached or unapproved in GCP Project 923868252205. Enable APIs in Google Cloud Console.');
-    }
+    console.warn('[GOOGLE BUSINESS] API quota or permission warning during discovery:', apiErrors.join(' | '));
+    // Fetch existing saved locations from DB (e.g. manually created or previously synced)
+    const existingLocations = await prisma.googleBusinessLocation.findMany({
+      where: { googleConnectionId: connection.id },
+    });
+    return existingLocations;
   }
 
   console.log(`[GOOGLE BUSINESS] Discovered ${discoveredLocations.length} locations for Google account ${connection.googleEmail}`);
