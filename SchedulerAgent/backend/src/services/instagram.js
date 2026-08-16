@@ -21,7 +21,7 @@ function getInstagramAuthConfig() {
 }
 
 /**
- * Generates official Instagram OAuth authorization URL pointing to api.instagram.com
+ * Generates official Instagram OAuth authorization URL
  */
 function getInstagramAuthUrl(state) {
   const config = getInstagramAuthConfig();
@@ -29,15 +29,29 @@ function getInstagramAuthUrl(state) {
     throw new Error('Instagram Client ID and Secret are not configured.');
   }
 
+  // Official Instagram Graph API / Instagram Business Login scopes
+  const scopes = [
+    'instagram_basic',
+    'instagram_content_publish',
+    'instagram_manage_comments',
+    'instagram_manage_insights',
+    'pages_show_list',
+    'pages_read_engagement',
+    'public_profile',
+    'business_management',
+  ];
+
   const queryParams = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
-    scope: 'user_profile,user_media',
+    scope: scopes.join(','),
     response_type: 'code',
-    state,
+    state: `ig_${state}`,
   });
 
-  return `${INSTAGRAM_OAUTH_BASE}/authorize?${queryParams.toString()}`;
+  // Use official Instagram Business Login OAuth endpoint
+  const baseAuthUrl = process.env.INSTAGRAM_AUTH_URL || 'https://www.instagram.com/oauth/authorize';
+  return `${baseAuthUrl}?${queryParams.toString()}`;
 }
 
 /**
