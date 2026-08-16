@@ -154,7 +154,7 @@ router.get('/facebook/connect', requireAuth, async (req, res) => {
 
 /**
  * GET /api/oauth/instagram/connect
- * Starts Instagram OAuth flow via Meta with HMAC-signed state
+ * Starts official Instagram OAuth flow with HMAC-signed state
  */
 router.get('/instagram/connect', requireAuth, async (req, res) => {
   try {
@@ -163,7 +163,8 @@ router.get('/instagram/connect', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'workspaceId query parameter is required' });
     }
     const stateToken = createOAuthState(workspaceId, req.userId);
-    const url = fbService.getInstagramAuthUrl(stateToken);
+    const igService = require('../services/instagram');
+    const url = igService.getInstagramAuthUrl(stateToken);
     res.redirect(url);
   } catch (err) {
     console.error('[INSTAGRAM OAUTH CONNECT ERROR]:', err.message);
@@ -172,69 +173,88 @@ router.get('/instagram/connect', requireAuth, async (req, res) => {
 });
 
 /**
- * GET /api/oauth/facebook/callback
- * Handles Facebook and Instagram OAuth redirect callbacks from Meta
+ * GET /api/oauth/instagram/callback
+ * Handles official Instagram OAuth redirect callback
  */
-router.get('/facebook/callback', async (req, res) => {
+router.get('/instagram/callback', async (req, res) => {
   try {
     const { code, state, error, error_description } = req.query;
     if (error) {
-      console.error(`[META OAUTH CALLBACK ERROR] Provider error: ${error} — ${error_description}`);
+      console.error(`[INSTAGRAM OAUTH CALLBACK ERROR] Provider error: ${error} — ${error_description}`);
       return res.redirect(`/settings?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(error_description || '')}#connections`);
     }
     if (!code) {
       return res.redirect('/settings?error=No+code+provided#connections');
     }
 
-    const isIgState = typeof state === 'string' && state.startsWith('ig_');
-    const rawState = isIgState ? state.substring(3) : state;
-    const { workspaceId, userId } = verifyOAuthState(rawState);
+    const { workspaceId, userId } = verifyOAuthState(state);
+    const igService = require('../services/instagram');
+    const { connection, accounts } = await igService.handleInstagramOAuthCallback(code, userId);
 
-    if (isIgState) {
-      // Instagram OAuth flow
-      const { connection, accounts } = await fbService.handleInstagramOAuthCallback(code, userId);
-      if (workspaceId && accounts.length > 0) {
-        for (const ig of accounts) {
-          await prisma.workspaceInstagramAccount.upsert({
-            where: {
-              workspaceId_instagramAccountId: {
-                workspaceId,
-                instagramAccountId: ig.id,
-              },
-            },
-            update: {},
-            create: {
+    if (workspaceId && accounts.length > 0) {
+      for (const ig of accounts) {
+        await prisma.workspaceInstagramAccount.upsert({
+          where: {
+            workspaceId_instagramAccountId: {
               workspaceId,
               instagramAccountId: ig.id,
             },
-          });
-        }
+          },
+          update: {},
+          create: {
+            workspaceId,
+            instagramAccountId: ig.id,
+          },
+        });
       }
-      return res.redirect(`/settings?igConnected=true&accountsCount=${accounts.length}&workspaceId=${workspaceId || ''}#connections`);
-    } else {
-      // Facebook OAuth flow
-      const { connection, pages } = await fbService.handleOAuthCallback(code, userId);
-      if (workspaceId && pages.length > 0) {
-        for (const p of pages) {
-          await prisma.workspaceFacebookPage.upsert({
-            where: {
-              workspaceId_facebookPageId: {
-                workspaceId,
-                facebookPageId: p.id,
-              },
-            },
-            update: {},
-            create: {
+    }
+
+    res.redirect(`/settings?igConnected=true&accountsCount=${accounts.length}&workspaceId=${workspaceId || ''}#connections`);
+  } catch (err) {
+    console.error('[INSTAGRAM OAUTH CALLBACK ERROR]:', err.message);
+    res.redirect(`/settings?error=${encodeURIComponent(err.message)}#connections`);
+  }
+});
+
+/**
+ * GET /api/oauth/facebook/callback
+ * Handles Facebook OAuth redirect callback and page auto-linking
+ */
+router.get('/facebook/callback', async (req, res) => {
+  try {
+    const { code, state, error, error_description } = req.query;
+    if (error) {
+      console.error(`[FACEBOOK OAUTH CALLBACK ERROR] Provider error: ${error} — ${error_description}`);
+      return res.redirect(`/settings?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(error_description || '')}#connections`);
+    }
+    if (!code) {
+      return res.redirect('/settings?error=No+code+provided#connections');
+    }
+
+    const { workspaceId, userId } = verifyOAuthState(state);
+    const { connection, pages } = await fbService.handleOAuthCallback(code, userId);
+
+    if (workspaceId && pages.length > 0) {
+      for (const p of pages) {
+        await prisma.workspaceFacebookPage.upsert({
+          where: {
+            workspaceId_facebookPageId: {
               workspaceId,
               facebookPageId: p.id,
             },
-          });
-        }
+          },
+          update: {},
+          create: {
+            workspaceId,
+            facebookPageId: p.id,
+          },
+        });
       }
-      return res.redirect(`/settings?fbConnected=true&pagesCount=${pages.length}&workspaceId=${workspaceId || ''}#connections`);
     }
+
+    res.redirect(`/settings?fbConnected=true&pagesCount=${pages.length}&workspaceId=${workspaceId || ''}#connections`);
   } catch (err) {
-    console.error('[META OAUTH CALLBACK ERROR]:', err.message);
+    console.error('[FACEBOOK OAUTH CALLBACK ERROR]:', err.message);
     res.redirect(`/settings?error=${encodeURIComponent(err.message)}#connections`);
   }
 });
