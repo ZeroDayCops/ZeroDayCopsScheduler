@@ -21,7 +21,7 @@ function getInstagramAuthConfig() {
 }
 
 /**
- * Generates official Instagram OAuth authorization URL on instagram.com
+ * Generates official Meta OAuth authorization URL for Meta App ID 1076195244968677
  */
 function getInstagramAuthUrl(state) {
   const config = getInstagramAuthConfig();
@@ -29,7 +29,7 @@ function getInstagramAuthUrl(state) {
     throw new Error('INSTAGRAM_OAUTH_CONFIGURATION_ERROR: Client ID or Secret missing.');
   }
 
-  // Official Instagram permissions
+  // Official Instagram Graph API Business permissions
   const scopes = [
     'instagram_basic',
     'instagram_content_publish',
@@ -44,12 +44,9 @@ function getInstagramAuthUrl(state) {
     scope: scopes.join(','),
     response_type: 'code',
     state,
-    enable_fb_login: '0',
-    force_authentication: '1',
   });
 
-  const baseAuthUrl = process.env.INSTAGRAM_AUTH_URL || 'https://www.instagram.com/oauth/authorize';
-  return `${baseAuthUrl}?${queryParams.toString()}`;
+  return `${META_OAUTH_BASE}/oauth?${queryParams.toString()}`;
 }
 
 /**
