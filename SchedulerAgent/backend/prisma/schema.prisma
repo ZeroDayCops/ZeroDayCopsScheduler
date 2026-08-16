@@ -81,6 +81,8 @@ model User {
   memberships     Membership[]
   workspaceAccess WorkspaceAccess[]
   uploadBatches   UploadBatch[]
+  facebookConnection  FacebookConnection?
+  instagramConnection InstagramConnection?
 }
 
 // ─── Membership (User ↔ Organization with role) ─────────────────
@@ -119,6 +121,7 @@ model Workspace {
   socialAccounts          SocialAccount[]
   googleLocations         WorkspaceGoogleLocation[]
   facebookPages           WorkspaceFacebookPage[]
+  instagramAccounts       WorkspaceInstagramAccount[]
   media                   Media[]
   templates               Template[]
   scheduledPosts          ScheduledPost[]
@@ -289,7 +292,9 @@ model ScheduledPost {
   mediaId         String
   socialAccountId String
   platform        Platform
-  googleLocationId String?
+  googleLocationId   String?
+  facebookPageId     String?              // Internal UUID FK to FacebookPage for FACEBOOK posts
+  instagramAccountId String?              // Internal UUID FK to InstagramAccount for INSTAGRAM posts
   renderedContent Json
   scheduledFor    DateTime
   scheduleSource  ScheduleSource          @default(MANUAL)
@@ -309,6 +314,8 @@ model ScheduledPost {
   @@index([status])
   @@index([batchId])
   @@index([googleLocationId])
+  @@index([facebookPageId])
+  @@index([instagramAccountId])
 }
 
 // ─── PostLog (history of publishing attempts) ────────────────────
@@ -350,6 +357,7 @@ model Notification {
 
 model FacebookConnection {
   id                    String              @id @default(uuid())
+  userId                String?             @unique // Maximum 1 Facebook Connection per User Account
   facebookUserId        String              @unique
   facebookName          String?
   accessTokenEncrypted  String
@@ -357,6 +365,7 @@ model FacebookConnection {
   status                SocialAccountStatus @default(CONNECTED)
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
+  user                  User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
   pages                 FacebookPage[]
 }
 
@@ -372,6 +381,7 @@ model FacebookPage {
   updatedAt                DateTime               @updatedAt
   facebookConnection       FacebookConnection     @relation(fields: [facebookConnectionId], references: [id], onDelete: Cascade)
   workspacePages           WorkspaceFacebookPage[]
+  instagramAccounts        InstagramAccount[]
 }
 
 model WorkspaceFacebookPage {
@@ -383,5 +393,54 @@ model WorkspaceFacebookPage {
   facebookPage   FacebookPage @relation(fields: [facebookPageId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, facebookPageId])
+}
+
+// ─── InstagramConnection (Dedicated Meta/IG OAuth Authorization) ─────
+
+model InstagramConnection {
+  id                   String             @id @default(uuid())
+  userId               String?            @unique // Maximum 1 Instagram Connection per User Account
+  instagramUserId      String?            // Meta/IG user ID
+  instagramName        String?            // User display name
+  accessTokenEncrypted String
+  expiresAt            DateTime?
+  status               SocialAccountStatus @default(CONNECTED)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  user                 User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts             InstagramAccount[]
+}
+
+// ─── InstagramAccount (Discovered IG Professional Accounts) ──────────
+
+model InstagramAccount {
+  id                    String                    @id @default(uuid())
+  instagramAccountId    String                    @unique // Meta's stable IG business account ID
+  username              String?
+  name                  String?
+  profilePictureUrl     String?
+  instagramConnectionId String?                   // FK to InstagramConnection (internal UUID)
+  facebookPageId        String?                   // Optional FK to FacebookPage (internal UUID)
+  status                SocialAccountStatus       @default(CONNECTED)
+  metadata              Json?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  instagramConnection   InstagramConnection?     @relation(fields: [instagramConnectionId], references: [id], onDelete: Cascade)
+  facebookPage          FacebookPage?            @relation(fields: [facebookPageId], references: [id], onDelete: Cascade)
+  workspaceAccounts     WorkspaceInstagramAccount[]
+
+  @@index([instagramConnectionId])
+  @@index([facebookPageId])
+}
+
+model WorkspaceInstagramAccount {
+  id                 String           @id @default(uuid())
+  workspaceId        String
+  instagramAccountId String           // FK to InstagramAccount.id (internal UUID)
+  createdAt          DateTime         @default(now())
+  workspace          Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  instagramAccount   InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, instagramAccountId])
 }
 

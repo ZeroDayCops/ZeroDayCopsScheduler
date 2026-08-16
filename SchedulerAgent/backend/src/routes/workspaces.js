@@ -965,4 +965,121 @@ router.post('/:id/facebook-pages/toggle', requireAuth, requireWorkspaceAccess, a
   }
 });
 
+// ─── Instagram Account Routes ────────────────────────────────────────
+
+/**
+ * GET /api/workspaces/:id/instagram-accounts
+ * Fetches all discovered Instagram accounts (via Facebook Pages) and indicates which are linked to this workspace
+ */
+router.get('/:id/instagram-accounts', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const workspaceId = req.params.id;
+    const igAccounts = await prisma.instagramAccount.findMany({
+      include: {
+        facebookPage: {
+          select: { pageName: true, facebookPageId: true },
+        },
+        workspaceAccounts: {
+          where: { workspaceId },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const formatted = igAccounts.map(ig => ({
+      id: ig.id,
+      instagramAccountId: ig.instagramAccountId,
+      username: ig.username,
+      name: ig.name,
+      profilePictureUrl: ig.profilePictureUrl,
+      status: ig.status,
+      facebookPageName: ig.facebookPage?.pageName || 'Unknown Page',
+      facebookPageId: ig.facebookPage?.facebookPageId || null,
+      isLinked: ig.workspaceAccounts.length > 0,
+    }));
+
+    res.json({ instagramAccounts: formatted });
+  } catch (err) {
+    console.error('[WORKSPACE IG ACCOUNTS ERROR]:', err.message);
+    res.status(500).json({ error: 'Failed to fetch workspace Instagram accounts' });
+  }
+});
+
+/**
+ * POST /api/workspaces/:id/instagram-accounts/toggle
+ * Links or unlinks an InstagramAccount to this workspace
+ */
+router.post('/:id/instagram-accounts/toggle', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const workspaceId = req.params.id;
+    const { instagramAccountId, enable } = req.body || {};
+
+    if (!instagramAccountId) {
+      return res.status(400).json({ error: 'instagramAccountId is required' });
+    }
+
+    if (enable) {
+      await prisma.workspaceInstagramAccount.upsert({
+        where: {
+          workspaceId_instagramAccountId: {
+            workspaceId,
+            instagramAccountId,
+          },
+        },
+        update: {},
+        create: {
+          workspaceId,
+          instagramAccountId,
+        },
+      });
+    } else {
+      await prisma.workspaceInstagramAccount.deleteMany({
+        where: {
+          workspaceId,
+          instagramAccountId,
+        },
+      });
+    }
+
+    res.json({ success: true, workspaceId, instagramAccountId, isLinked: !!enable });
+  } catch (err) {
+    console.error('[WORKSPACE IG TOGGLE ERROR]:', err.message);
+    res.status(500).json({ error: 'Failed to update workspace Instagram account mapping' });
+  }
+});
+
+/**
+ * POST /api/workspaces/:id/instagram-accounts/sync
+ * Re-discovers Instagram accounts by refreshing all connected Facebook Page connections
+ */
+router.post('/:id/instagram-accounts/sync', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const { discoverPagesForConnection } = require('../services/facebook');
+
+    const connections = await prisma.facebookConnection.findMany({
+      where: { status: 'CONNECTED' },
+    });
+
+    let totalDiscovered = 0;
+    for (const conn of connections) {
+      try {
+        await discoverPagesForConnection(conn.id);
+      } catch (err) {
+        console.warn(`[IG SYNC] Failed to refresh connection ${conn.id}:`, err.message);
+      }
+    }
+
+    const igAccounts = await prisma.instagramAccount.findMany({
+      where: { status: 'CONNECTED' },
+    });
+    totalDiscovered = igAccounts.length;
+
+    res.json({ success: true, totalDiscovered });
+  } catch (err) {
+    console.error('[WORKSPACE IG SYNC ERROR]:', err.message);
+    res.status(500).json({ error: 'Failed to sync Instagram accounts' });
+  }
+});
+
 module.exports = router;
+

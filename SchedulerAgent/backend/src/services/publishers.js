@@ -547,6 +547,17 @@ async function publishToPlatform(post, decryptedToken, media) {
           activeMedia.r2Url,
           activeMedia.destinationUrl
         );
+      case 'INSTAGRAM':
+        const igService = require('./facebook');
+        if (!post.instagramAccountId) {
+          throw new Error('instagramAccountId is required for Instagram post.');
+        }
+        return await igService.createInstagramPost(
+          post.instagramAccountId,
+          typeof post.renderedContent === 'string' ? post.renderedContent : (post.renderedContent?.body || ''),
+          activeMedia.r2Url,
+          activeMedia.mediaType || 'IMAGE'
+        );
       default:
         return {
           success: false,

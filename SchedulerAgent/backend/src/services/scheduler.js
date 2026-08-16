@@ -79,6 +79,13 @@ async function processDuePosts() {
             decryptedToken = await gbpService.getValidAccessToken(loc.googleConnectionId);
           }
         }
+      } else if (post.platform === 'FACEBOOK') {
+        // Facebook uses Page Access Token stored on FacebookPage record, not SocialAccount
+        // The publisher resolves the token itself via post.facebookPageId
+        decryptedToken = '__facebook_page_token_resolved_by_publisher__';
+      } else if (post.platform === 'INSTAGRAM') {
+        // Instagram uses Page Access Token from the parent Facebook Page, resolved by publisher
+        decryptedToken = '__instagram_token_resolved_by_publisher__';
       } else {
         // 1. Proactive Token Refresh for standard platforms
         refreshedAccount = await refreshTokenIfNeeded(post.socialAccountId);

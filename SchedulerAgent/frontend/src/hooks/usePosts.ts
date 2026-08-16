@@ -4,10 +4,11 @@ import { useApp } from '../context/AppContext';
 
 export interface PostLog { id: string; event: string; message: string; createdAt: string; }
 export interface ScheduledPost {
-  id: string; mediaId: string; platform: 'LINKEDIN' | 'PINTEREST' | 'YOUTUBE';
+  id: string; mediaId: string; platform: 'LINKEDIN' | 'PINTEREST' | 'YOUTUBE' | 'FACEBOOK' | 'INSTAGRAM';
   renderedContent: { body?: string; title?: string; hashtags?: string[] };
   scheduledFor: string; status: string; publishedAt?: string | null;
   externalPostId?: string | null; retryCount: number;
+  facebookPageId?: string | null; instagramAccountId?: string | null;
   media: { id: string; filename: string; mediaType: string; status: string; aiMasterJson?: any };
   postLogs: PostLog[];
 }
@@ -31,7 +32,7 @@ export function useCreatePost() {
   const { currentWorkspace } = useApp();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { mediaId: string; platform: string; scheduledFor: string }) =>
+    mutationFn: (data: { mediaId: string; platform: string; scheduledFor: string; facebookPageId?: string; instagramAccountId?: string }) =>
       fetchApi(`/workspaces/${currentWorkspace!.id}/scheduled-posts`, {
         method: 'POST', body: JSON.stringify(data),
       }),

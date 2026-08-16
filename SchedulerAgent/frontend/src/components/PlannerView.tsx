@@ -18,7 +18,14 @@ import {
 
 import { formatInWorkspaceTimezone } from '../lib/date-utils';
 
-const PLATFORM_NAMES: Record<string, string> = { LINKEDIN: 'LinkedIn', PINTEREST: 'Pinterest', YOUTUBE: 'YouTube', GOOGLE_BUSINESS: 'Google Business Profile' };
+const PLATFORM_NAMES: Record<string, string> = {
+  LINKEDIN: 'LinkedIn',
+  PINTEREST: 'Pinterest',
+  YOUTUBE: 'YouTube',
+  GOOGLE_BUSINESS: 'Google Business',
+  FACEBOOK: 'Facebook',
+  INSTAGRAM: 'Instagram',
+};
 
 interface PreviewContent { title?: string; body: string; hashtags?: string[]; warnings?: string[] }
 
@@ -65,11 +72,42 @@ export const PlannerView: React.FC = () => {
 
   const handleSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedMedia || !scheduledFor || !platforms.length) return;
+    if (!selectedMedia || !scheduledFor || !platforms.length || !currentWorkspace) return;
     try {
-      await Promise.all(platforms.map(p =>
-        createPost.mutateAsync({ mediaId: selectedMedia.id, platform: p, scheduledFor: new Date(scheduledFor).toISOString() })
-      ));
+      // Fetch connected destination IDs for FB and IG if selected
+      let fbPages: any[] = [];
+      let igAccounts: any[] = [];
+
+      if (platforms.includes('FACEBOOK')) {
+        const res = await fetchApi<{ connections: any[] }>(`/workspaces/${currentWorkspace.id}/facebook-pages`);
+        fbPages = (res.connections || []).flatMap(c => c.pages || []).filter((p: any) => p.isLinked);
+      }
+
+      if (platforms.includes('INSTAGRAM')) {
+        const res = await fetchApi<{ instagramAccounts: any[] }>(`/workspaces/${currentWorkspace.id}/instagram-accounts`);
+        igAccounts = (res.instagramAccounts || []).filter((a: any) => a.isLinked);
+      }
+
+      await Promise.all(platforms.map(async p => {
+        const postPayload: any = {
+          mediaId: selectedMedia.id,
+          platform: p,
+          scheduledFor: new Date(scheduledFor).toISOString(),
+        };
+
+        if (p === 'FACEBOOK') {
+          if (fbPages.length === 0) throw new Error('No connected Facebook Page found. Please connect a Page in Workspace Settings.');
+          postPayload.facebookPageId = fbPages[0].id;
+        }
+
+        if (p === 'INSTAGRAM') {
+          if (igAccounts.length === 0) throw new Error('No connected Instagram account found. Please connect an Account in Workspace Settings.');
+          postPayload.instagramAccountId = igAccounts[0].id;
+        }
+
+        return createPost.mutateAsync(postPayload);
+      }));
+
       setToast({ type: 'success', message: 'Post scheduled successfully!' });
       setSelectedMedia(null); setPreview(null);
     } catch (err: any) {
@@ -160,8 +198,8 @@ export const PlannerView: React.FC = () => {
               <h3 className="text-sm font-bold text-slate-300 border-b border-white/5 pb-2">2. Design & Queue</h3>
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Platforms</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(['LINKEDIN', 'PINTEREST', 'YOUTUBE', 'GOOGLE_BUSINESS'] as const).map(p => {
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {(['LINKEDIN', 'PINTEREST', 'YOUTUBE', 'GOOGLE_BUSINESS', 'FACEBOOK', 'INSTAGRAM'] as const).map(p => {
                     const isYouTubeDisabled = p === 'YOUTUBE' && selectedMedia?.mediaType === 'IMAGE';
                     return (
                       <button key={p} type="button" onClick={() => togglePlatform(p)} aria-pressed={platforms.includes(p)}
@@ -170,7 +208,7 @@ export const PlannerView: React.FC = () => {
                         className={`py-2 px-2 border rounded-xl text-[11px] font-bold transition text-center uppercase tracking-wide focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                           isYouTubeDisabled ? 'border-white/5 bg-[#080d16] text-slate-600 cursor-not-allowed opacity-50' :
                           platforms.includes(p) ? 'border-indigo-500 bg-indigo-500/5 text-indigo-400 cursor-pointer' : 'border-white/5 bg-[#080d16] text-slate-400 hover:border-white/10 cursor-pointer'}`}>
-                        {p === 'GOOGLE_BUSINESS' ? 'Google Business' : PLATFORM_NAMES[p]}
+                        {PLATFORM_NAMES[p]}
                       </button>
                     );
                   })}

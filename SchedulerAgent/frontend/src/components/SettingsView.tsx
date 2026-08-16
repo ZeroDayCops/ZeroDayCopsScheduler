@@ -15,6 +15,7 @@ import {
 
 import { GBPLocationManagerModal } from './GBPLocationManagerModal';
 import { FacebookPageManagerModal } from './FacebookPageManagerModal';
+import { InstagramAccountManagerModal } from './InstagramAccountManagerModal';
 
 const PLATFORM_NAMES: Record<string, string> = { LINKEDIN: 'LinkedIn', PINTEREST: 'Pinterest', YOUTUBE: 'YouTube', GOOGLE_BUSINESS: 'Google Business Profile', FACEBOOK: 'Facebook Pages' };
 const PLATFORM_COLORS: Record<string, string> = { LINKEDIN: 'text-blue-400', PINTEREST: 'text-pink-500', YOUTUBE: 'text-red-400', GOOGLE_BUSINESS: 'text-emerald-400', FACEBOOK: 'text-blue-400' };
@@ -25,6 +26,7 @@ export const SettingsView: React.FC = () => {
 
   const [showGBPModal, setShowGBPModal] = useState(false);
   const [showFBModal, setShowFBModal] = useState(false);
+  const [showIGModal, setShowIGModal] = useState(false);
 
   // React Query for fresh workspace data — refetch automatically
   const wsQuery = useQuery({
@@ -110,15 +112,19 @@ export const SettingsView: React.FC = () => {
     const successParam = params.get('connected');
     const gbpConnected = params.get('gbpConnected');
     const locCount = params.get('locationsCount');
+    const fbConnected = params.get('fbConnected');
+    const pagesCount = params.get('pagesCount');
+    const igConnected = params.get('igConnected');
+    const accountsCount = params.get('accountsCount');
 
     if (errorParam) {
       let friendlyMessage = `OAuth Error: ${errorParam}`;
       if (errorParam === 'invalid_client') {
-        friendlyMessage = 'Google OAuth Client ID or Client Secret configured on Render server is invalid or unapproved. Please update credentials in Render settings.';
+        friendlyMessage = 'OAuth Client ID or Secret is invalid or unapproved. Please update credentials.';
       } else if (errorParam === 'redirect_uri_mismatch') {
-        friendlyMessage = 'Google Redirect URI mismatch. Ensure "https://scheduler.zerodaycops.in/api/oauth/google-business/callback" is registered under Authorized Redirect URIs in Google Cloud Console.';
+        friendlyMessage = 'Redirect URI mismatch. Ensure URI is registered in Developer Console.';
       } else if (errorParam === 'access_denied') {
-        friendlyMessage = 'Google Business Profile authorization was cancelled or denied.';
+        friendlyMessage = 'Authorization was cancelled or denied.';
       } else if (errorDesc) {
         friendlyMessage = `OAuth Error: ${errorParam} — ${errorDesc}`;
       }
@@ -127,6 +133,14 @@ export const SettingsView: React.FC = () => {
       window.history.replaceState({}, '', window.location.pathname);
     } else if (gbpConnected === 'true') {
       setToast({ type: 'success', message: `Google Business Profile connected! ${locCount || 0} location(s) discovered.` });
+      window.history.replaceState({}, '', window.location.pathname);
+      queryClient.invalidateQueries({ queryKey: ['workspace', currentWorkspace?.id] });
+    } else if (fbConnected === 'true') {
+      setToast({ type: 'success', message: `Facebook Account connected! ${pagesCount || 0} page(s) discovered.` });
+      window.history.replaceState({}, '', window.location.pathname);
+      queryClient.invalidateQueries({ queryKey: ['workspace', currentWorkspace?.id] });
+    } else if (igConnected === 'true') {
+      setToast({ type: 'success', message: `Instagram Account connected! ${accountsCount || 0} account(s) discovered.` });
       window.history.replaceState({}, '', window.location.pathname);
       queryClient.invalidateQueries({ queryKey: ['workspace', currentWorkspace?.id] });
     } else if (successParam) {
@@ -206,11 +220,23 @@ export const SettingsView: React.FC = () => {
     if (!disconnectTarget || !currentWorkspace) return;
     setIsDisconnecting(true);
     try {
-      await fetchApi(`/oauth/${disconnectTarget.toLowerCase()}/disconnect`, {
-        method: 'POST',
-        body: JSON.stringify({ workspaceId: currentWorkspace.id }),
-      });
-      setToast({ type: 'success', message: `${PLATFORM_NAMES[disconnectTarget]} disconnected successfully` });
+      if (disconnectTarget === 'FACEBOOK') {
+        await fetchApi('/oauth/facebook/disconnect', {
+          method: 'POST',
+          body: JSON.stringify({ workspaceId: currentWorkspace.id }),
+        });
+      } else if (disconnectTarget === 'INSTAGRAM') {
+        await fetchApi('/oauth/instagram/disconnect', {
+          method: 'POST',
+          body: JSON.stringify({ workspaceId: currentWorkspace.id }),
+        });
+      } else {
+        await fetchApi(`/oauth/${disconnectTarget.toLowerCase()}/disconnect`, {
+          method: 'POST',
+          body: JSON.stringify({ workspaceId: currentWorkspace.id }),
+        });
+      }
+      setToast({ type: 'success', message: `${PLATFORM_NAMES[disconnectTarget] || disconnectTarget} disconnected successfully` });
       queryClient.invalidateQueries({ queryKey: ['workspace', currentWorkspace.id] });
     } catch (err: any) {
       setToast({ type: 'error', message: err.message || 'Failed to disconnect' });
@@ -389,38 +415,136 @@ export const SettingsView: React.FC = () => {
             </div>
           </div>
 
-          {/* Facebook Pages Connection Card */}
-          <div className="border border-white/5 rounded-xl p-4 space-y-3 bg-[#080d16]/50">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-blue-400">Facebook Pages</span>
-              <Badge type={freshWs?.facebookPages?.length > 0 ? 'CONNECTED' : 'NOT_CONNECTED'} />
-            </div>
+          {/* Facebook Connection Card */}
+          {(() => {
+            const isFbConnected = (freshWs?.facebookPages?.length || 0) > 0;
+            return (
+              <div className="border border-white/5 rounded-xl p-4 space-y-3 bg-[#080d16]/50">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-blue-400">Facebook</span>
+                  <Badge type={isFbConnected ? 'CONNECTED' : 'NOT_CONNECTED'} />
+                </div>
 
-            <p className="text-xs text-slate-400">
-              Publish image and video posts to connected Facebook Pages & Instagram Business accounts.
-            </p>
+                <p className="text-xs text-slate-400">
+                  {isFbConnected
+                    ? `${freshWs.facebookPages.length} Facebook Page(s) connected to this workspace.`
+                    : 'Connect your Facebook account to discover and manage Facebook Pages.'}
+                </p>
 
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Button
-                variant="primary"
-                size="sm"
-                className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
-                onClick={() => {
-                  window.location.href = `${API_BASE}/oauth/facebook/connect?workspaceId=${currentWorkspace?.id}`;
-                }}
-              >
-                Connect Facebook Account
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<Building className="w-3.5 h-3.5" />}
-                onClick={() => setShowFBModal(true)}
-              >
-                Manage Pages ({freshWs?.facebookPages?.length || 0})
-              </Button>
-            </div>
-          </div>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {!isFbConnected ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
+                      onClick={() => {
+                        window.location.href = `${API_BASE}/oauth/facebook/connect?workspaceId=${currentWorkspace?.id}`;
+                      }}
+                    >
+                      Connect Facebook Account
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Building className="w-3.5 h-3.5" />}
+                        onClick={() => setShowFBModal(true)}
+                      >
+                        Manage Pages ({freshWs.facebookPages.length})
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          window.location.href = `${API_BASE}/oauth/facebook/connect?workspaceId=${currentWorkspace?.id}`;
+                        }}
+                      >
+                        Reconnect
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        icon={<Unlink className="w-3.5 h-3.5" />}
+                        onClick={() => setDisconnectTarget('FACEBOOK')}
+                      >
+                        Disconnect
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Instagram Connection Card */}
+          {(() => {
+            const isIgConnected = (freshWs?.instagramAccounts?.length || 0) > 0;
+            const igUsername = freshWs?.instagramAccounts?.[0]?.instagramAccount?.username;
+
+            return (
+              <div className="border border-white/5 rounded-xl p-4 space-y-3 bg-[#080d16]/50">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-pink-400">Instagram</span>
+                  <Badge type={isIgConnected ? 'CONNECTED' : 'NOT_CONNECTED'} />
+                </div>
+
+                {isIgConnected && igUsername ? (
+                  <div className="text-xs font-semibold text-pink-400 flex items-center gap-1.5 bg-pink-500/5 border border-pink-500/10 rounded-lg p-2">
+                    <UserCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>Connected account: <strong>@{igUsername}</strong></span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    Connect your Instagram Professional account to publish photo posts and Reels.
+                  </p>
+                )}
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {!isIgConnected ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold"
+                      onClick={() => {
+                        window.location.href = `${API_BASE}/oauth/instagram/connect?workspaceId=${currentWorkspace?.id}`;
+                      }}
+                    >
+                      + Add Instagram Account
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Building className="w-3.5 h-3.5" />}
+                        onClick={() => setShowIGModal(true)}
+                      >
+                        Manage Instagram ({freshWs.instagramAccounts.length})
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          window.location.href = `${API_BASE}/oauth/instagram/connect?workspaceId=${currentWorkspace?.id}`;
+                        }}
+                      >
+                        Reconnect
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        icon={<Unlink className="w-3.5 h-3.5" />}
+                        onClick={() => setDisconnectTarget('INSTAGRAM')}
+                      >
+                        Disconnect
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </Card>
       </div>
 
@@ -437,6 +561,14 @@ export const SettingsView: React.FC = () => {
           workspaceId={currentWorkspace.id}
           workspaceName={currentWorkspace.brandName}
           onClose={() => setShowFBModal(false)}
+        />
+      )}
+
+      {showIGModal && currentWorkspace && (
+        <InstagramAccountManagerModal
+          workspaceId={currentWorkspace.id}
+          workspaceName={currentWorkspace.brandName}
+          onClose={() => setShowIGModal(false)}
         />
       )}
 

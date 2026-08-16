@@ -26,7 +26,7 @@ function isConfigured(platform) {
   if (platform.toUpperCase() === 'GOOGLE_BUSINESS') {
     return gbpService.getGbpOAuthConfig().isConfigured;
   }
-  if (platform.toUpperCase() === 'FACEBOOK') {
+  if (platform.toUpperCase() === 'FACEBOOK' || platform.toUpperCase() === 'INSTAGRAM') {
     return fbService.getFacebookAuthConfig().isConfigured;
   }
   const envPrefix = platform.toUpperCase();
@@ -48,6 +48,7 @@ router.get('/config-status', requireAuth, (req, res) => {
       YOUTUBE: isConfigured('YOUTUBE'),
       GOOGLE_BUSINESS: isConfigured('GOOGLE_BUSINESS'),
       FACEBOOK: isConfigured('FACEBOOK'),
+      INSTAGRAM: isConfigured('INSTAGRAM'),
     }
   });
 });
@@ -152,45 +153,88 @@ router.get('/facebook/connect', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/oauth/instagram/connect
+ * Starts Instagram OAuth flow via Meta with HMAC-signed state
+ */
+router.get('/instagram/connect', requireAuth, async (req, res) => {
+  try {
+    const { workspaceId } = req.query;
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspaceId query parameter is required' });
+    }
+    const stateToken = createOAuthState(workspaceId, req.userId);
+    const url = fbService.getInstagramAuthUrl(stateToken);
+    res.redirect(url);
+  } catch (err) {
+    console.error('[INSTAGRAM OAUTH CONNECT ERROR]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/oauth/facebook/callback
- * Handles Facebook OAuth redirect callback and page auto-linking
+ * Handles Facebook and Instagram OAuth redirect callbacks from Meta
  */
 router.get('/facebook/callback', async (req, res) => {
   try {
     const { code, state, error, error_description } = req.query;
     if (error) {
-      console.error(`[FACEBOOK OAUTH CALLBACK ERROR] Provider error: ${error} — ${error_description}`);
+      console.error(`[META OAUTH CALLBACK ERROR] Provider error: ${error} — ${error_description}`);
       return res.redirect(`/settings?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(error_description || '')}#connections`);
     }
     if (!code) {
       return res.redirect('/settings?error=No+code+provided#connections');
     }
 
-    const { workspaceId } = verifyOAuthState(state);
-    const { connection, pages } = await fbService.handleOAuthCallback(code);
+    const isIgState = typeof state === 'string' && state.startsWith('ig_');
+    const rawState = isIgState ? state.substring(3) : state;
+    const { workspaceId, userId } = verifyOAuthState(rawState);
 
-    // Auto-link discovered Facebook Pages to the workspace
-    if (workspaceId && pages.length > 0) {
-      for (const p of pages) {
-        await prisma.workspaceFacebookPage.upsert({
-          where: {
-            workspaceId_facebookPageId: {
+    if (isIgState) {
+      // Instagram OAuth flow
+      const { connection, accounts } = await fbService.handleInstagramOAuthCallback(code, userId);
+      if (workspaceId && accounts.length > 0) {
+        for (const ig of accounts) {
+          await prisma.workspaceInstagramAccount.upsert({
+            where: {
+              workspaceId_instagramAccountId: {
+                workspaceId,
+                instagramAccountId: ig.id,
+              },
+            },
+            update: {},
+            create: {
+              workspaceId,
+              instagramAccountId: ig.id,
+            },
+          });
+        }
+      }
+      return res.redirect(`/settings?igConnected=true&accountsCount=${accounts.length}&workspaceId=${workspaceId || ''}#connections`);
+    } else {
+      // Facebook OAuth flow
+      const { connection, pages } = await fbService.handleOAuthCallback(code, userId);
+      if (workspaceId && pages.length > 0) {
+        for (const p of pages) {
+          await prisma.workspaceFacebookPage.upsert({
+            where: {
+              workspaceId_facebookPageId: {
+                workspaceId,
+                facebookPageId: p.id,
+              },
+            },
+            update: {},
+            create: {
               workspaceId,
               facebookPageId: p.id,
             },
-          },
-          update: {},
-          create: {
-            workspaceId,
-            facebookPageId: p.id,
-          },
-        });
+          });
+        }
       }
+      return res.redirect(`/settings?fbConnected=true&pagesCount=${pages.length}&workspaceId=${workspaceId || ''}#connections`);
     }
-
-    res.redirect(`/settings?fbConnected=true&pagesCount=${pages.length}&workspaceId=${workspaceId || ''}#connections`);
   } catch (err) {
-    console.error('[FACEBOOK OAUTH CALLBACK ERROR]:', err.message);
+    console.error('[META OAUTH CALLBACK ERROR]:', err.message);
     res.redirect(`/settings?error=${encodeURIComponent(err.message)}#connections`);
   }
 });
@@ -869,6 +913,55 @@ router.post('/:platform/disconnect', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Disconnect error:', err);
     res.status(500).json({ error: 'Failed to disconnect account' });
+  }
+});
+
+/**
+ * POST /api/oauth/facebook/disconnect
+ * Disconnects the user's Facebook OAuth Connection & revokes workspace page mappings
+ */
+router.post('/facebook/disconnect', requireAuth, async (req, res) => {
+  try {
+    const { workspaceId } = req.body || {};
+    const userId = req.userId;
+
+    // Delete or disconnect user's FacebookConnection
+    const conn = await prisma.facebookConnection.findFirst({
+      where: { OR: [{ userId }, { pages: { some: { workspacePages: { some: { workspaceId } } } } }] },
+    });
+
+    if (conn) {
+      await prisma.facebookConnection.delete({ where: { id: conn.id } });
+    }
+
+    res.json({ success: true, message: 'Facebook Account disconnected successfully' });
+  } catch (err) {
+    console.error('[FB DISCONNECT ERROR]:', err.message);
+    res.status(500).json({ error: 'Failed to disconnect Facebook Account' });
+  }
+});
+
+/**
+ * POST /api/oauth/instagram/disconnect
+ * Disconnects the user's Instagram OAuth Connection & revokes workspace account mappings
+ */
+router.post('/instagram/disconnect', requireAuth, async (req, res) => {
+  try {
+    const { workspaceId } = req.body || {};
+    const userId = req.userId;
+
+    const conn = await prisma.instagramConnection.findFirst({
+      where: { OR: [{ userId }, { accounts: { some: { workspaceAccounts: { some: { workspaceId } } } } }] },
+    });
+
+    if (conn) {
+      await prisma.instagramConnection.delete({ where: { id: conn.id } });
+    }
+
+    res.json({ success: true, message: 'Instagram Account disconnected successfully' });
+  } catch (err) {
+    console.error('[IG DISCONNECT ERROR]:', err.message);
+    res.status(500).json({ error: 'Failed to disconnect Instagram Account' });
   }
 });
 

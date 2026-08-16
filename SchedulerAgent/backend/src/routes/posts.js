@@ -38,16 +38,24 @@ router.get('/scheduled-posts', requireAuth, requireWorkspaceAccess, async (req, 
 router.post('/scheduled-posts', requireAuth, requireWorkspaceAccess, async (req, res) => {
   try {
     const { workspaceId } = req;
-    const { mediaId, platform, scheduledFor } = req.body;
+    const { mediaId, platform, scheduledFor, facebookPageId, instagramAccountId } = req.body;
 
     if (!mediaId || !platform || !scheduledFor) {
       return res.status(400).json({ error: 'mediaId, platform, and scheduledFor are required' });
     }
 
     const upperPlatform = platform.toUpperCase();
-    const validPlatforms = ['LINKEDIN', 'PINTEREST', 'YOUTUBE'];
+    const validPlatforms = ['LINKEDIN', 'PINTEREST', 'YOUTUBE', 'FACEBOOK', 'INSTAGRAM'];
     if (!validPlatforms.includes(upperPlatform)) {
-      return res.status(400).json({ error: 'Invalid platform. Must be LINKEDIN, PINTEREST, or YOUTUBE' });
+      return res.status(400).json({ error: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}` });
+    }
+
+    // Validate destination IDs for Meta platforms
+    if (upperPlatform === 'FACEBOOK' && !facebookPageId) {
+      return res.status(400).json({ error: 'facebookPageId is required for Facebook platform.' });
+    }
+    if (upperPlatform === 'INSTAGRAM' && !instagramAccountId) {
+      return res.status(400).json({ error: 'instagramAccountId is required for Instagram platform.' });
     }
 
     // Verify media exists and belongs to the workspace
@@ -92,23 +100,47 @@ router.post('/scheduled-posts', requireAuth, requireWorkspaceAccess, async (req,
       });
     }
 
-    if (!template) {
+    // For FACEBOOK/INSTAGRAM, template is optional — use AI content directly
+    if (!template && upperPlatform !== 'FACEBOOK' && upperPlatform !== 'INSTAGRAM') {
       return res.status(500).json({ error: 'Default template not found for platform' });
     }
 
     // Render the content snapshot
-    const rendering = renderPost(media, req.workspace, template, upperPlatform);
-    if (rendering.error) {
-      return res.status(400).json({ error: rendering.error });
+    let rendering;
+    if (template) {
+      rendering = renderPost(media, req.workspace, template, upperPlatform);
+      if (rendering.error) {
+        return res.status(400).json({ error: rendering.error });
+      }
+    } else {
+      // For Meta platforms without template, use AI-generated content as-is
+      const aiContent = media.aiContent || {};
+      rendering = {
+        body: aiContent.body || aiContent.description || media.originalFilename || '',
+        title: aiContent.title || '',
+        platform: upperPlatform,
+      };
     }
 
     // Find connected SocialAccount for this platform and workspace
-    const socialAccount = await prisma.socialAccount.findFirst({
+    // For FACEBOOK/INSTAGRAM, auto-create a placeholder SocialAccount if none exists
+    let socialAccount = await prisma.socialAccount.findFirst({
       where: {
         workspaceId,
         platform: upperPlatform,
       },
     });
+
+    if (!socialAccount && (upperPlatform === 'FACEBOOK' || upperPlatform === 'INSTAGRAM')) {
+      socialAccount = await prisma.socialAccount.create({
+        data: {
+          workspaceId,
+          platform: upperPlatform,
+          accountName: upperPlatform === 'FACEBOOK' ? 'Facebook Page' : 'Instagram',
+          status: 'CONNECTED',
+        },
+      });
+    }
 
     if (!socialAccount) {
       return res.status(400).json({
@@ -120,19 +152,22 @@ router.post('/scheduled-posts', requireAuth, requireWorkspaceAccess, async (req,
       console.warn(`[SCHEDULER NOTICE] Scheduling post for ${upperPlatform} on workspace ${workspaceId} while SocialAccount status is ${socialAccount.status}.`);
     }
 
-    // Save scheduled post
-    const post = await prisma.scheduledPost.create({
-      data: {
-        workspaceId,
-        mediaId,
-        socialAccountId: socialAccount.id,
-        platform: upperPlatform,
-        renderedContent: rendering,
-        scheduledFor: new Date(scheduledFor),
-        scheduleSource: 'MANUAL',
-        status: 'PENDING',
-      },
-    });
+    // Save scheduled post with destination IDs
+    const postData = {
+      workspaceId,
+      mediaId,
+      socialAccountId: socialAccount.id,
+      platform: upperPlatform,
+      renderedContent: rendering,
+      scheduledFor: new Date(scheduledFor),
+      scheduleSource: 'MANUAL',
+      status: 'PENDING',
+    };
+
+    if (upperPlatform === 'FACEBOOK') postData.facebookPageId = facebookPageId;
+    if (upperPlatform === 'INSTAGRAM') postData.instagramAccountId = instagramAccountId;
+
+    const post = await prisma.scheduledPost.create({ data: postData });
 
     res.status(201).json({ post });
   } catch (err) {
@@ -180,9 +215,9 @@ router.put('/scheduled-posts/:id', requireAuth, requireWorkspaceAccess, async (r
 
     if (mediaId || platform) {
       // Validate platform
-      const validPlatforms = ['LINKEDIN', 'PINTEREST', 'YOUTUBE'];
+      const validPlatforms = ['LINKEDIN', 'PINTEREST', 'YOUTUBE', 'FACEBOOK', 'INSTAGRAM'];
       if (!validPlatforms.includes(activePlatform)) {
-        return res.status(400).json({ error: 'Invalid platform. Must be LINKEDIN, PINTEREST, or YOUTUBE' });
+        return res.status(400).json({ error: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}` });
       }
 
       // Verify media
